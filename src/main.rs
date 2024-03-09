@@ -332,14 +332,14 @@ impl Screen {
 
                     let mut padding = (self.size.cols - len) / 2;
                     if padding != 0 {
-                        temp.push_str("~");
+                        temp.push('~');
                         padding -= 1;
                     }
-                    (0..padding).for_each(|_| temp.push_str(" "));
+                    (0..padding).for_each(|_| temp.push(' '));
 
                     temp.push_str(&welcome[..len]);
                 } else {
-                    temp.push_str("~");
+                    temp.push('~');
                 }
             } else {
                 let row = self.rows.get_render(file_row);
@@ -418,9 +418,9 @@ impl EditorRows {
         row.row_content.chars().for_each(|c| {
             index += 1;
             if c == '\t' {
-                row.render.push_str(" ");
+                row.render.push(' ');
                 while index % TAB_STOP != 0 {
-                    row.render.push_str(" ");
+                    row.render.push(' ');
                     index += 1;
                 }
             } else {
