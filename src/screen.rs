@@ -1,11 +1,29 @@
 use crossterm::{cursor, queue, style, terminal};
-use std::io::{self, Write};
+use std::{
+    cmp,
+    io::{self, Write},
+};
+
+use crate::editor::Line;
+
+pub enum Direction {
+    Up,
+    Down,
+    Left,
+    Right,
+}
+
+#[derive(Default)]
+pub struct Position {
+    pub x: u16,
+    pub y: u16,
+}
 
 pub struct Screen {
-    out: io::Stdout,
+    pub out: io::Stdout,
 
-    width: u16,
-    height: u16,
+    pub width: u16,
+    pub height: u16,
 }
 
 impl Screen {
@@ -22,27 +40,37 @@ impl Screen {
         queue!(
             self.out,
             terminal::Clear(terminal::ClearType::All),
+            cursor::Hide,
             cursor::MoveTo(0, 0)
         )
     }
 
-    pub fn refresh_screen(&mut self) -> io::Result<()> {
-        self.clear()?;
-        self.draw_rows()?;
-
-        self.flush()
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
+    pub fn flush(&mut self) -> io::Result<()> {
         self.out.flush()
     }
 
-    fn draw_rows(&mut self) -> io::Result<()> {
-        // let lines = &self.rows.lines;
+    pub fn draw_rows(&mut self, lines: &[Line], offset: &Position) -> io::Result<()> {
+        for i in 0..self.height {
+            let row = i as usize + offset.y as usize;
 
-        for row in 0..self.height {
-            queue!(io::stdout(), cursor::MoveTo(0, row))?;
-            queue!(io::stdout(), style::Print("~"))?;
+            queue!(self.out, cursor::MoveTo(0, i))?;
+            // queue!(io::stdout(), style::Print("~"))?;
+
+            if row >= lines.len() {
+                // print welcome message if file is empty
+            } else {
+                let line = &lines[row].render;
+
+                let line_len = cmp::min(
+                    line.len().saturating_sub(offset.x as usize),
+                    self.width as usize,
+                );
+
+                let start = if line_len == 0 { 0 } else { offset.x as usize };
+
+                queue!(self.out, style::Print(&line[start..start + line_len]))?;
+                queue!(self.out, style::Print(" "))?;
+            }
 
             // if i + self.cursor.pos_offset.1 >= lines.len() {
             //     break;
@@ -78,16 +106,17 @@ impl Screen {
             //
             // queue!(io::stdout(), style::Print(line),)?;
             //
-            queue!(
-                io::stdout(),
-                terminal::Clear(terminal::ClearType::UntilNewLine)
-            )?;
+            queue!(self.out, terminal::Clear(terminal::ClearType::UntilNewLine))?;
         }
 
         Ok(())
     }
 
-    pub fn cursor_position(&self) -> io::Result<(u16, u16)> {
-        cursor::position()
+    pub fn draw_cursor(&mut self, pos: &Position, offset: &Position) -> io::Result<()> {
+        queue!(
+            self.out,
+            cursor::Show,
+            cursor::MoveTo(pos.x - offset.x, pos.y - offset.y)
+        )
     }
 }

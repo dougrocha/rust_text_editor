@@ -1,8 +1,7 @@
-mod cursor;
+mod editor;
 mod keyboard;
 mod screen;
 
-mod editor;
 use editor::Editor;
 
 fn main() -> std::io::Result<()> {
