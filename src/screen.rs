@@ -5,7 +5,7 @@ use std::{
 };
 
 use crate::{
-    editor::{Buffer, Line},
+    buffer::{Buffer, Line},
     status_message::Message,
 };
 
