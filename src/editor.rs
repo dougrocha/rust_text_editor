@@ -1,96 +1,17 @@
-use std::{
-    cmp,
-    collections::VecDeque,
-    io,
-    path::{Path, PathBuf},
-    time,
-};
+use std::{cmp, collections::VecDeque, io, time};
 
 use crossterm::{
     cursor,
     event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers},
-    queue, terminal,
+    execute, queue, terminal,
 };
 
 use crate::{
+    buffer::{Buffer, Line},
     keyboard::Keyboard,
     screen::{Direction, Position, Screen},
     status_message::Message,
 };
-
-pub struct Buffer {
-    pub lines: Vec<Line>,
-    pub file_path: Option<PathBuf>,
-}
-
-impl Buffer {
-    pub fn new() -> Self {
-        let mut args = std::env::args();
-        match args.nth(1) {
-            Some(file) => Buffer::from(file.as_ref()),
-            None => Self {
-                lines: Vec::new(),
-                file_path: None,
-            },
-        }
-    }
-
-    pub fn save(&self) -> io::Result<()> {
-        if let Some(file_path) = &self.file_path {
-            let contents = self
-                .lines
-                .iter()
-                .map(|l| l.render.as_str())
-                .collect::<Vec<_>>()
-                .join("\n");
-
-            std::fs::write(file_path, contents)
-        } else {
-            Ok(())
-        }
-    }
-
-    pub fn get_line(&self, y: usize) -> Option<&Line> {
-        self.lines.get(y)
-    }
-
-    pub fn get_line_mut(&mut self, y: usize) -> Option<&mut Line> {
-        self.lines.get_mut(y)
-    }
-}
-
-impl From<&Path> for Buffer {
-    fn from(file: &Path) -> Self {
-        let file_contents = std::fs::read_to_string(file).expect("Unable to read file");
-        Self {
-            file_path: Some(file.to_path_buf()),
-            lines: file_contents.lines().map(|s| Line::new(s.into())).collect(),
-        }
-    }
-}
-
-pub struct Line {
-    pub content: Box<str>,
-    pub render: String,
-}
-
-const TAB_STOP: usize = 8;
-
-impl Line {
-    pub fn new(content: Box<str>) -> Self {
-        let render = content.chars().fold(String::new(), |mut acc, c| {
-            if c == '\t' {
-                let spaces = TAB_STOP - (acc.len() % TAB_STOP);
-                acc.push_str(&" ".repeat(spaces));
-            } else {
-                acc.push(c);
-            }
-            acc
-        });
-
-        Self { content, render }
-    }
-}
 
 pub struct Editor {
     screen: Screen,
@@ -120,6 +41,13 @@ impl Editor {
 
     pub fn start(&mut self) -> io::Result<()> {
         terminal::enable_raw_mode()?;
+
+        self.add_message(Message::new(
+            "HELP: Ctrl-S = save | Ctrl-Q = quit".to_string(),
+        ));
+
+        // change cursor style depending on config or command/insert mode
+        execute!(self.screen.out, cursor::SetCursorStyle::SteadyBar)?;
 
         loop {
             if self.refresh_screen().is_err() {
@@ -171,13 +99,23 @@ impl Editor {
                 code: KeyCode::Char('s'),
                 modifiers: KeyModifiers::CONTROL,
                 ..
-            } => {
-                self.buffer.save()?;
-                self.add_message(Message::with_duration(
-                    "File saved".to_string(),
+            } => match self.buffer.save() {
+                Ok((bytes, file)) => {
+                    let message_text = format!(
+                        "{:?} bytes written to {:?}",
+                        bytes,
+                        file.unwrap().to_string()
+                    );
+                    self.add_message(Message::with_duration(
+                        message_text,
+                        time::Duration::from_secs(2),
+                    ))
+                }
+                Err(_) => self.add_message(Message::with_duration(
+                    "Error saving file".to_string(),
                     time::Duration::from_secs(2),
-                ));
-            }
+                )),
+            },
             KeyEvent {
                 code,
                 modifiers: KeyModifiers::NONE,
@@ -194,9 +132,9 @@ impl Editor {
                     };
                     self.move_cursor(dir);
                 }
-                KeyCode::Backspace => {}
-                KeyCode::Enter => {}
-                KeyCode::Char(c) => self.insert_character(c)?,
+                KeyCode::Char(c) => self.insert_character(c),
+                KeyCode::Backspace => self.delete_character(),
+                KeyCode::Enter => self.insert_newline(),
                 _ => {}
             },
             _ => {}
@@ -205,7 +143,7 @@ impl Editor {
         Ok(false)
     }
 
-    fn insert_character(&mut self, c: char) -> io::Result<()> {
+    fn insert_character(&mut self, c: char) {
         if (self.cursor.y as usize) == self.buffer.lines.len() {
             self.buffer.lines.push(Line::new("".into()));
         }
@@ -217,7 +155,47 @@ impl Editor {
         line.render.insert(at, c);
 
         self.cursor.x += 1;
-        Ok(())
+    }
+
+    fn delete_character(&mut self) {
+        if self.cursor.y == 0 && self.cursor.x == 0 {
+            return;
+        }
+
+        if self.cursor.x == 0 {
+            let cur_line = self.buffer.lines.remove(self.cursor.y as usize).render;
+
+            let prev_line = self
+                .buffer
+                .get_line_mut(self.cursor.y as usize - 1)
+                .unwrap();
+            let prev_len = prev_line.render.len();
+
+            prev_line.render.push_str(&cur_line);
+
+            self.cursor.y -= 1;
+            self.cursor.x = prev_len as u16;
+
+            return;
+        }
+
+        self.buffer
+            .get_line_mut(self.cursor.y as usize)
+            .unwrap()
+            .render
+            .remove(self.cursor.x as usize - 1);
+        self.cursor.x -= 1;
+    }
+
+    pub fn insert_newline(&mut self) {
+        let cur_line = self.buffer.get_line_mut(self.cursor.y as usize).unwrap();
+        let new_line = cur_line.render.split_off(self.cursor.x as usize);
+        self.buffer.lines.insert(
+            self.cursor.y as usize + 1,
+            Line::new(new_line.into_boxed_str()),
+        );
+        self.cursor.y += 1;
+        self.cursor.x = 0;
     }
 
     pub fn move_cursor(&mut self, direction: Direction) {
@@ -236,7 +214,7 @@ impl Editor {
             Direction::Right => {
                 let cur_line = self.buffer.get_line(self.cursor.y as usize);
                 if let Some(line) = cur_line {
-                    if (self.cursor.x as usize) < line.render.len().saturating_sub(1) {
+                    if (self.cursor.x as usize) < line.render.len() {
                         self.cursor.x += 1;
                     }
                 }
@@ -245,16 +223,24 @@ impl Editor {
 
         let cur_line = self.buffer.get_line(self.cursor.y as usize);
         if let Some(line) = cur_line {
-            if (self.cursor.x as usize) > line.render.len().saturating_sub(1) {
+            if (self.cursor.x as usize) > line.render.len() {
                 self.cursor.x = line.render.len().saturating_sub(1) as u16;
             }
         }
     }
 
     pub fn scroll(&mut self) {
-        self.offset.y = cmp::min(self.offset.y, self.cursor.y);
-        if self.cursor.y >= self.offset.y + self.screen.height {
-            self.offset.y = self.cursor.y - self.screen.height + 1;
+        let scrolloff = 8;
+
+        self.offset.y = cmp::min(self.offset.y, self.cursor.y.saturating_sub(scrolloff));
+        if self.cursor.y >= self.offset.y + self.screen.height.saturating_sub(scrolloff)
+            && self.buffer.lines.len() != (self.offset.y + self.screen.height) as usize
+        {
+            self.offset.y = self
+                .cursor
+                .y
+                .saturating_sub(self.screen.height.saturating_sub(scrolloff))
+                + 1;
         }
 
         self.offset.x = cmp::min(self.offset.x, self.cursor.x);
