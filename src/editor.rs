@@ -1,6 +1,7 @@
 use std::{
-    cmp, io,
+    cmp,
     collections::VecDeque,
+    io,
     path::{Path, PathBuf},
     time,
 };
@@ -34,8 +35,27 @@ impl Buffer {
         }
     }
 
-    fn get_line(&self, y: usize) -> Option<&Line> {
+    pub fn save(&self) -> io::Result<()> {
+        if let Some(file_path) = &self.file_path {
+            let contents = self
+                .lines
+                .iter()
+                .map(|l| l.render.as_str())
+                .collect::<Vec<_>>()
+                .join("\n");
+
+            std::fs::write(file_path, contents)
+        } else {
+            Ok(())
+        }
+    }
+
+    pub fn get_line(&self, y: usize) -> Option<&Line> {
         self.lines.get(y)
+    }
+
+    pub fn get_line_mut(&mut self, y: usize) -> Option<&mut Line> {
+        self.lines.get_mut(y)
     }
 }
 
@@ -124,6 +144,7 @@ impl Editor {
 
         self.purge_messages();
         self.screen.draw_message(self.messages.front_mut())?;
+
         self.screen.draw_cursor(&self.cursor, &self.offset)?;
 
         self.screen.flush()
@@ -147,32 +168,56 @@ impl Editor {
                 return Ok(true);
             }
             KeyEvent {
-                code:
-                    key_code @ KeyCode::Up
-                    | key_code @ KeyCode::Down
-                    | key_code @ KeyCode::Left
-                    | key_code @ KeyCode::Right,
-                modifiers: KeyModifiers::NONE,
-                kind: KeyEventKind::Press,
+                code: KeyCode::Char('s'),
+                modifiers: KeyModifiers::CONTROL,
                 ..
             } => {
-                let dir = match key_code {
-                    KeyCode::Up => Direction::Up,
-                    KeyCode::Down => Direction::Down,
-                    KeyCode::Left => Direction::Left,
-                    KeyCode::Right => Direction::Right,
-                    _ => unreachable!(),
-                };
-                self.move_cursor(dir);
+                self.buffer.save()?;
                 self.add_message(Message::with_duration(
                     "File saved".to_string(),
                     time::Duration::from_secs(2),
                 ));
             }
+            KeyEvent {
+                code,
+                modifiers: KeyModifiers::NONE,
+                kind: KeyEventKind::Press,
+                ..
+            } => match code {
+                KeyCode::Up | KeyCode::Down | KeyCode::Left | KeyCode::Right => {
+                    let dir = match code {
+                        KeyCode::Up => Direction::Up,
+                        KeyCode::Down => Direction::Down,
+                        KeyCode::Left => Direction::Left,
+                        KeyCode::Right => Direction::Right,
+                        _ => unreachable!(),
+                    };
+                    self.move_cursor(dir);
+                }
+                KeyCode::Backspace => {}
+                KeyCode::Enter => {}
+                KeyCode::Char(c) => self.insert_character(c)?,
+                _ => {}
+            },
             _ => {}
         };
 
         Ok(false)
+    }
+
+    fn insert_character(&mut self, c: char) -> io::Result<()> {
+        if (self.cursor.y as usize) == self.buffer.lines.len() {
+            self.buffer.lines.push(Line::new("".into()));
+        }
+
+        let line = self.buffer.get_line_mut(self.cursor.y as usize).unwrap();
+
+        let at = cmp::min(self.cursor.x as usize, line.render.len());
+
+        line.render.insert(at, c);
+
+        self.cursor.x += 1;
+        Ok(())
     }
 
     pub fn move_cursor(&mut self, direction: Direction) {
