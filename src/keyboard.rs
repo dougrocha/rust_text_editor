@@ -1,6 +1,6 @@
 use std::{io, time};
 
-use crossterm::event;
+use crossterm::event::{self};
 
 pub struct Keyboard;
 
@@ -11,6 +11,8 @@ impl Keyboard {
                 if let event::Event::Key(key_event) = event::read()? {
                     return Ok(key_event);
                 }
+            } else {
+                return Ok(event::KeyEvent::from(event::KeyCode::Null));
             }
         }
     }
