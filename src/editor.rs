@@ -1,6 +1,8 @@
 use std::{
     cmp, io,
+    collections::VecDeque,
     path::{Path, PathBuf},
+    time,
 };
 
 use crossterm::{
@@ -12,6 +14,7 @@ use crossterm::{
 use crate::{
     keyboard::Keyboard,
     screen::{Direction, Position, Screen},
+    status_message::Message,
 };
 
 pub struct Buffer {
@@ -75,6 +78,7 @@ pub struct Editor {
     buffer: Buffer,
     cursor: Position,
     offset: Position,
+    messages: VecDeque<Message>,
     // config: Rc<Config>,
 }
 
@@ -88,6 +92,7 @@ impl Editor {
             buffer: Buffer::new(),
             cursor: Position::default(),
             offset: Position::default(),
+            messages: VecDeque::new(),
             // rows: Rows::new(),
             // config,
         }
@@ -115,7 +120,10 @@ impl Editor {
         self.scroll();
         self.screen.clear()?;
         self.screen.draw_rows(&self.buffer.lines, &self.offset)?;
+        self.screen.draw_status_bar(&self.buffer, &self.cursor)?;
 
+        self.purge_messages();
+        self.screen.draw_message(self.messages.front_mut())?;
         self.screen.draw_cursor(&self.cursor, &self.offset)?;
 
         self.screen.flush()
@@ -156,6 +164,10 @@ impl Editor {
                     _ => unreachable!(),
                 };
                 self.move_cursor(dir);
+                self.add_message(Message::with_duration(
+                    "File saved".to_string(),
+                    time::Duration::from_secs(2),
+                ));
             }
             _ => {}
         };
@@ -203,6 +215,18 @@ impl Editor {
         self.offset.x = cmp::min(self.offset.x, self.cursor.x);
         if self.cursor.x >= self.offset.x + self.screen.width {
             self.offset.x = self.cursor.x - self.screen.width + 1;
+        }
+    }
+
+    pub fn add_message(&mut self, message: Message) {
+        self.messages.push_back(message);
+    }
+
+    fn purge_messages(&mut self) {
+        if let Some(message) = self.messages.front() {
+            if message.has_expired() {
+                self.messages.pop_front();
+            }
         }
     }
 }

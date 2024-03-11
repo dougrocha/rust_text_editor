@@ -1,6 +1,7 @@
 mod editor;
 mod keyboard;
 mod screen;
+mod status_message;
 
 use editor::Editor;
 
@@ -70,3 +71,4 @@ fn main() -> std::io::Result<()> {
 //         }
 //     }
 // }
+
