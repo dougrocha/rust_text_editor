@@ -6,7 +6,7 @@ use std::{
 
 use crate::{
     buffer::{Buffer, Line},
-    status_message::Message,
+    editor::Messages,
 };
 
 pub enum Direction {
@@ -147,26 +147,24 @@ impl Screen {
         Ok(())
     }
 
-    pub fn draw_message(&mut self, message: Option<&mut Message>) -> io::Result<()> {
-        if message.is_none() {
+    pub fn draw_message(&mut self, messages: &mut Messages) -> io::Result<()> {
+        if messages.is_empty() {
             return Ok(());
         }
 
-        let message = message.unwrap();
+        for (i, msg) in messages.iter_mut().enumerate() {
+            if msg.start_time.is_none() {
+                msg.start()
+            }
 
-        // Maybe put this somewhere else so this function only draws
-        if message.start_time.is_none() {
-            message.start()
+            let start_msg_height = self.height - 1 - i as u16;
+
+            queue!(
+                self.out,
+                cursor::MoveTo(self.width - msg.text.len() as u16, start_msg_height),
+                style::Print(&msg.text)
+            )?;
         }
-
-        queue!(
-            self.out,
-            cursor::MoveTo(
-                self.width - message.text.len() as u16,
-                self.height - self.status_bar.height
-            ),
-            style::Print(&message.text)
-        )?;
 
         Ok(())
     }

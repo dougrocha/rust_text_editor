@@ -5,6 +5,7 @@ pub struct Buffer {
     pub lines: Vec<Line>,
     pub file_path: Option<PathBuf>,
 
+    // if the buffer has been modified
     pub dirty: bool,
 }
 
@@ -21,8 +22,12 @@ impl Buffer {
         }
     }
 
-    pub fn save(&self) -> io::Result<(usize, Option<&str>)> {
+    pub fn save(&mut self) -> io::Result<(usize, Option<&str>)> {
         if let Some(file_path) = &self.file_path {
+            if !self.dirty {
+                return Ok((0, file_path.to_str()));
+            }
+
             let contents = self
                 .lines
                 .iter()
@@ -32,10 +37,13 @@ impl Buffer {
 
             let bytes_written = contents.as_bytes().len();
 
+            // TODO: Handle file that doesnt exist before hand
             std::fs::write(file_path, contents)?;
 
+            self.dirty = false;
             Ok((bytes_written, file_path.to_str()))
         } else {
+            // TODO: handle save_as case here
             Ok((0, None))
         }
     }

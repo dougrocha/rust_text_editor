@@ -13,20 +13,20 @@ use crate::{
     status_message::Message,
 };
 
+pub type Messages = VecDeque<Message>;
+
 pub struct Editor {
     screen: Screen,
     keyboard: Keyboard,
     buffer: Buffer,
     cursor: Position,
     offset: Position,
-    messages: VecDeque<Message>,
+    messages: Messages,
     // config: Rc<Config>,
 }
 
 impl Editor {
     pub fn new() -> Self {
-        // let config = Rc::new(Config::new());
-
         Self {
             screen: Screen::new(),
             keyboard: Keyboard,
@@ -34,8 +34,6 @@ impl Editor {
             cursor: Position::default(),
             offset: Position::default(),
             messages: VecDeque::new(),
-            // rows: Rows::new(),
-            // config,
         }
     }
 
@@ -71,7 +69,7 @@ impl Editor {
         self.screen.draw_status_bar(&self.buffer, &self.cursor)?;
 
         self.purge_messages();
-        self.screen.draw_message(self.messages.front_mut())?;
+        self.screen.draw_message(&mut self.messages)?;
 
         self.screen.draw_cursor(&self.cursor, &self.offset)?;
 
@@ -98,6 +96,7 @@ impl Editor {
             KeyEvent {
                 code: KeyCode::Char('s'),
                 modifiers: KeyModifiers::CONTROL,
+                kind: KeyEventKind::Press,
                 ..
             } => match self.buffer.save() {
                 Ok((bytes, file)) => {
@@ -155,6 +154,8 @@ impl Editor {
         line.render.insert(at, c);
 
         self.cursor.x += 1;
+
+        self.buffer.dirty = true;
     }
 
     fn delete_character(&mut self) {
@@ -185,6 +186,8 @@ impl Editor {
             .render
             .remove(self.cursor.x as usize - 1);
         self.cursor.x -= 1;
+
+        self.buffer.dirty = true;
     }
 
     pub fn insert_newline(&mut self) {
@@ -196,6 +199,8 @@ impl Editor {
         );
         self.cursor.y += 1;
         self.cursor.x = 0;
+
+        self.buffer.dirty = true;
     }
 
     pub fn move_cursor(&mut self, direction: Direction) {
