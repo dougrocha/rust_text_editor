@@ -6,7 +6,7 @@ use std::{
 
 use crate::{
     buffer::{Buffer, Line},
-    editor::Messages,
+    editor::{Messages, Mode},
 };
 
 pub enum Direction {
@@ -100,7 +100,12 @@ impl Screen {
         Ok(())
     }
 
-    pub fn draw_status_bar(&mut self, buffer: &Buffer, cursor: &Position) -> io::Result<()> {
+    pub fn draw_status_bar(
+        &mut self,
+        buffer: &Buffer,
+        cursor: &Position,
+        mode: &Mode,
+    ) -> io::Result<()> {
         let file_length = buffer.lines.len();
 
         let cur_line_len = if let Some(line) = buffer.get_line(cursor.y as usize) {
@@ -109,6 +114,23 @@ impl Screen {
             0
         };
 
+        queue!(self.out, style::SetAttribute(style::Attribute::Reverse))?;
+
+        let cmd = match mode {
+            Mode::Normal => "Normal",
+            Mode::Insert => "Insert",
+            Mode::Visual => "Visual",
+            Mode::VisualLine => "V-Line",
+            Mode::Command => "Command",
+        };
+        let cmd = format!(" {} ", cmd);
+
+        let file_path = if let Some(file) = &buffer.file_path {
+            file.to_str().unwrap()
+        } else {
+            "NO PATH"
+        };
+        let file_path = format!(" {} ", file_path);
         let file_info = format!(
             " {}|{}|{}|{} ",
             cursor.y + 1,
@@ -117,21 +139,12 @@ impl Screen {
             cur_line_len
         );
 
-        queue!(self.out, style::SetAttribute(style::Attribute::Reverse))?;
+        let start_len = file_path.len() + cmd.len();
 
-        let file_path = if let Some(file) = &buffer.file_path {
-            file.to_str().unwrap()
-        } else {
-            "NO PATH"
-        };
+        queue!(self.out, cursor::MoveTo(0, self.height), style::Print(cmd))?;
+        queue!(self.out, style::Print(file_path))?;
 
-        queue!(
-            self.out,
-            cursor::MoveTo(0, self.height),
-            style::Print(file_path)
-        )?;
-
-        for i in file_path.len() as u16..self.status_bar.width {
+        for i in start_len as u16..self.status_bar.width {
             queue!(self.out, cursor::MoveTo(i, self.height))?;
 
             if self.width - i <= file_info.len() as u16 {

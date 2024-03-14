@@ -15,6 +15,14 @@ use crate::{
 
 pub type Messages = VecDeque<Message>;
 
+pub enum Mode {
+    Normal,
+    Insert,
+    Command,
+    Visual,
+    VisualLine,
+}
+
 pub struct Editor {
     screen: Screen,
     keyboard: Keyboard,
@@ -22,6 +30,8 @@ pub struct Editor {
     cursor: Position,
     offset: Position,
     messages: Messages,
+
+    mode: Mode,
     // config: Rc<Config>,
 }
 
@@ -34,6 +44,7 @@ impl Editor {
             cursor: Position::default(),
             offset: Position::default(),
             messages: VecDeque::new(),
+            mode: Mode::Normal,
         }
     }
 
@@ -66,7 +77,8 @@ impl Editor {
         self.scroll();
         self.screen.clear()?;
         self.screen.draw_rows(&self.buffer.lines, &self.offset)?;
-        self.screen.draw_status_bar(&self.buffer, &self.cursor)?;
+        self.screen
+            .draw_status_bar(&self.buffer, &self.cursor, &self.mode)?;
 
         self.purge_messages();
         self.screen.draw_message(&mut self.messages)?;
@@ -85,20 +97,126 @@ impl Editor {
 
     /// Process the keypress and return whether the editor should exit
     fn process_keypress(&mut self) -> io::Result<bool> {
-        match self.keyboard.read_key()? {
-            KeyEvent {
-                code: KeyCode::Char('q'),
-                modifiers: KeyModifiers::CONTROL,
-                ..
-            } => {
-                return Ok(true);
+        let key_event = self.keyboard.read_key()?;
+
+        match self.mode {
+            Mode::Normal => match key_event {
+                KeyEvent {
+                    code: KeyCode::Char('q'),
+                    modifiers: KeyModifiers::CONTROL,
+                    ..
+                } => {
+                    return Ok(true);
+                }
+                KeyEvent {
+                    code: KeyCode::Char(c),
+                    modifiers: KeyModifiers::SHIFT,
+                    kind: KeyEventKind::Press,
+                    ..
+                } => match c {
+                    ':' => self.mode = Mode::Command,
+                    'V' => self.mode = Mode::VisualLine,
+                    _ => {}
+                },
+                KeyEvent {
+                    code: KeyCode::Char(c),
+                    modifiers: KeyModifiers::NONE,
+                    kind: KeyEventKind::Press,
+                    ..
+                } => match c {
+                    'j' => self.move_cursor(Direction::Down),
+                    'k' => self.move_cursor(Direction::Up),
+                    'h' => self.move_cursor(Direction::Left),
+                    'l' => self.move_cursor(Direction::Right),
+
+                    'i' => self.mode = Mode::Insert,
+                    'v' => self.mode = Mode::Visual,
+                    _ => {}
+                },
+                KeyEvent {
+                    code: KeyCode::Esc,
+                    modifiers: KeyModifiers::NONE,
+                    kind: KeyEventKind::Press,
+                    ..
+                } => self.mode = Mode::Normal,
+                _ => {}
+            },
+            Mode::Insert => {
+                if let KeyEvent {
+                    code,
+                    modifiers: KeyModifiers::NONE,
+                    kind: KeyEventKind::Press,
+                    ..
+                } = key_event
+                {
+                    match code {
+                        KeyCode::Up | KeyCode::Down | KeyCode::Left | KeyCode::Right => {
+                            let dir = match code {
+                                KeyCode::Up => Direction::Up,
+                                KeyCode::Down => Direction::Down,
+                                KeyCode::Left => Direction::Left,
+                                KeyCode::Right => Direction::Right,
+                                _ => unreachable!(),
+                            };
+                            self.move_cursor(dir);
+                        }
+                        KeyCode::Char(c) => self.insert_character(c),
+                        KeyCode::Backspace => self.delete_character(),
+                        KeyCode::Enter => self.insert_newline(),
+                        KeyCode::Esc => self.mode = Mode::Normal,
+                        _ => {}
+                    }
+                }
             }
-            KeyEvent {
-                code: KeyCode::Char('s'),
-                modifiers: KeyModifiers::CONTROL,
-                kind: KeyEventKind::Press,
-                ..
-            } => match self.buffer.save() {
+            Mode::Command => {
+                if let KeyEvent {
+                    code,
+                    modifiers: KeyModifiers::NONE,
+                    kind: KeyEventKind::Press,
+                    ..
+                } = key_event
+                {
+                    if KeyCode::Esc == code {
+                        self.mode = Mode::Normal
+                    }
+                }
+            }
+            Mode::Visual => {
+                if let KeyEvent {
+                    code,
+                    modifiers: KeyModifiers::NONE,
+                    kind: KeyEventKind::Press,
+                    ..
+                } = key_event
+                {
+                    if KeyCode::Esc == code {
+                        self.mode = Mode::Normal
+                    }
+                }
+            }
+            Mode::VisualLine => {
+                if let KeyEvent {
+                    code,
+                    modifiers: KeyModifiers::NONE,
+                    kind: KeyEventKind::Press,
+                    ..
+                } = key_event
+                {
+                    if KeyCode::Esc == code {
+                        self.mode = Mode::Normal
+                    }
+                }
+            }
+        }
+
+        if let KeyEvent {
+            code: KeyCode::Char('s'),
+            modifiers: KeyModifiers::CONTROL,
+            kind: KeyEventKind::Press,
+            ..
+        } = key_event
+        {
+            match self.buffer.save() {
                 Ok((bytes, file)) => {
                     let message_text = format!(
                         "{:?} bytes written to {:?}",
@@ -114,29 +232,7 @@ impl Editor {
                     "Error saving file".to_string(),
                     time::Duration::from_secs(2),
                 )),
-            },
-            KeyEvent {
-                code,
-                modifiers: KeyModifiers::NONE,
-                kind: KeyEventKind::Press,
-                ..
-            } => match code {
-                KeyCode::Up | KeyCode::Down | KeyCode::Left | KeyCode::Right => {
-                    let dir = match code {
-                        KeyCode::Up => Direction::Up,
-                        KeyCode::Down => Direction::Down,
-                        KeyCode::Left => Direction::Left,
-                        KeyCode::Right => Direction::Right,
-                        _ => unreachable!(),
-                    };
-                    self.move_cursor(dir);
-                }
-                KeyCode::Char(c) => self.insert_character(c),
-                KeyCode::Backspace => self.delete_character(),
-                KeyCode::Enter => self.insert_newline(),
-                _ => {}
-            },
-            _ => {}
+            }
         };
 
         Ok(false)
