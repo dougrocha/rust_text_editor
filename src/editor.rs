@@ -76,6 +76,8 @@ impl Editor {
     pub fn refresh_screen(&mut self) -> io::Result<()> {
         self.scroll();
         self.screen.clear()?;
+        self.screen
+            .draw_gutter(&self.buffer.lines, &self.cursor, &self.offset)?;
         self.screen.draw_rows(&self.buffer.lines, &self.offset)?;
         self.screen
             .draw_status_bar(&self.buffer, &self.cursor, &self.mode)?;

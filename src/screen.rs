@@ -33,7 +33,7 @@ pub struct Screen {
     pub width: u16,
     pub height: u16,
 
-    pub gutter_size: usize,
+    pub gutter_size: u16,
 
     pub status_bar: StatusBar,
 }
@@ -52,7 +52,7 @@ impl Screen {
             width: columns,
             height: rows - status_bar.height,
 
-            gutter_size: 1,
+            gutter_size: 4,
 
             status_bar,
         }
@@ -75,8 +75,7 @@ impl Screen {
         for i in 0..self.height {
             let row = i as usize + offset.y as usize;
 
-            queue!(self.out, cursor::MoveTo(0, i))?;
-            queue!(io::stdout(), style::Print("~"))?;
+            queue!(self.out, cursor::MoveTo(self.gutter_size, i))?;
 
             if row >= lines.len() {
                 // print welcome message if file is empty
@@ -97,6 +96,48 @@ impl Screen {
             queue!(self.out, terminal::Clear(terminal::ClearType::UntilNewLine))?;
         }
 
+        Ok(())
+    }
+
+    pub fn draw_gutter(
+        &mut self,
+        lines: &[Line],
+        cursor: &Position,
+        offset: &Position,
+    ) -> io::Result<()> {
+        let line_numbers = true;
+        let relative_numbers = true;
+
+        for i in 0..self.height {
+            queue!(self.out, cursor::MoveTo(0, i))?;
+
+            let row = i as usize + offset.y as usize;
+
+            if row >= lines.len() {
+                continue;
+            }
+
+            if line_numbers {
+                let line_number = if relative_numbers {
+                    if cursor.y == row as u16 {
+                        row + 1
+                    } else {
+                        (row as i32 - cursor.y as i32).unsigned_abs() as usize
+                    }
+                } else {
+                    row + 1
+                };
+
+                queue!(
+                    self.out,
+                    style::Print(format!(
+                        "{:>width$} ",
+                        line_number,
+                        width = self.gutter_size as usize - 1
+                    ))
+                )?;
+            }
+        }
         Ok(())
     }
 
@@ -186,7 +227,7 @@ impl Screen {
         queue!(
             self.out,
             cursor::Show,
-            cursor::MoveTo(pos.x - offset.x + self.gutter_size as u16, pos.y - offset.y)
+            cursor::MoveTo(pos.x - offset.x + self.gutter_size, pos.y - offset.y)
         )
     }
 }
