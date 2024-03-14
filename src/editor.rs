@@ -23,6 +23,28 @@ pub enum Mode {
     VisualLine,
 }
 
+impl Mode {
+    fn is_insert(&self) -> bool {
+        matches!(self, Mode::Insert)
+    }
+
+    fn is_normal(&self) -> bool {
+        matches!(self, Mode::Normal)
+    }
+
+    fn is_command(&self) -> bool {
+        matches!(self, Mode::Command)
+    }
+
+    fn is_visual(&self) -> bool {
+        matches!(self, Mode::Visual)
+    }
+
+    fn is_visual_line(&self) -> bool {
+        matches!(self, Mode::VisualLine)
+    }
+}
+
 pub struct Editor {
     screen: Screen,
     keyboard: Keyboard,
@@ -56,7 +78,7 @@ impl Editor {
         ));
 
         // change cursor style depending on config or command/insert mode
-        execute!(self.screen.out, cursor::SetCursorStyle::SteadyBar)?;
+        execute!(self.screen.out, cursor::SetCursorStyle::SteadyBlock)?;
 
         loop {
             if self.refresh_screen().is_err() {
@@ -97,6 +119,25 @@ impl Editor {
         std::process::exit(1);
     }
 
+    fn change_mode(&mut self, mode: Mode) -> io::Result<()> {
+        self.mode = mode;
+
+        match self.mode {
+            Mode::Normal => {
+                queue!(self.screen.out, cursor::SetCursorStyle::SteadyBlock)?;
+                self.check_cursor_bounds();
+            }
+            Mode::Insert => {
+                queue!(self.screen.out, cursor::SetCursorStyle::SteadyBar)?;
+            }
+            Mode::Command => todo!(),
+            Mode::Visual => todo!(),
+            Mode::VisualLine => todo!(),
+        }
+
+        Ok(())
+    }
+
     /// Process the keypress and return whether the editor should exit
     fn process_keypress(&mut self) -> io::Result<bool> {
         let key_event = self.keyboard.read_key()?;
@@ -116,8 +157,24 @@ impl Editor {
                     kind: KeyEventKind::Press,
                     ..
                 } => match c {
-                    ':' => self.mode = Mode::Command,
-                    'V' => self.mode = Mode::VisualLine,
+                    ':' => self.change_mode(Mode::Command)?,
+                    'V' => self.change_mode(Mode::VisualLine)?,
+
+                    'I' => {
+                        self.change_mode(Mode::Insert)?;
+                        // change cursor to where text begins on line
+                        let index = self.buffer.lines[self.cursor.y as usize]
+                            .render
+                            .find(|c: char| !c.is_whitespace())
+                            .unwrap_or(0);
+
+                        self.cursor.x = index as u16;
+                    }
+                    'A' => {
+                        self.change_mode(Mode::Insert)?;
+                        self.cursor.x =
+                            self.buffer.lines[self.cursor.y as usize].render.len() as u16;
+                    }
                     _ => {}
                 },
                 KeyEvent {
@@ -131,8 +188,12 @@ impl Editor {
                     'h' => self.move_cursor(Direction::Left),
                     'l' => self.move_cursor(Direction::Right),
 
-                    'i' => self.mode = Mode::Insert,
-                    'v' => self.mode = Mode::Visual,
+                    'i' => self.change_mode(Mode::Insert)?,
+                    'a' => {
+                        self.change_mode(Mode::Insert)?;
+                        self.cursor.x += 1;
+                    }
+                    'v' => self.change_mode(Mode::Visual)?,
                     _ => {}
                 },
                 KeyEvent {
@@ -140,7 +201,7 @@ impl Editor {
                     modifiers: KeyModifiers::NONE,
                     kind: KeyEventKind::Press,
                     ..
-                } => self.mode = Mode::Normal,
+                } => self.change_mode(Mode::Normal)?,
                 _ => {}
             },
             Mode::Insert => {
@@ -165,7 +226,7 @@ impl Editor {
                         KeyCode::Char(c) => self.insert_character(c),
                         KeyCode::Backspace => self.delete_character(),
                         KeyCode::Enter => self.insert_newline(),
-                        KeyCode::Esc => self.mode = Mode::Normal,
+                        KeyCode::Esc => self.change_mode(Mode::Normal)?,
                         _ => {}
                     }
                 }
@@ -179,7 +240,7 @@ impl Editor {
                 } = key_event
                 {
                     if KeyCode::Esc == code {
-                        self.mode = Mode::Normal
+                        self.change_mode(Mode::Normal)?
                     }
                 }
             }
@@ -192,7 +253,7 @@ impl Editor {
                 } = key_event
                 {
                     if KeyCode::Esc == code {
-                        self.mode = Mode::Normal
+                        self.change_mode(Mode::Normal)?
                     }
                 }
             }
@@ -205,7 +266,7 @@ impl Editor {
                 } = key_event
                 {
                     if KeyCode::Esc == code {
-                        self.mode = Mode::Normal
+                        self.change_mode(Mode::Normal)?
                     }
                 }
             }
@@ -315,21 +376,22 @@ impl Editor {
                 self.cursor.x = self.cursor.x.saturating_sub(1);
             }
             Direction::Right => {
-                let cur_line = self.buffer.get_line(self.cursor.y as usize);
-                if let Some(line) = cur_line {
-                    if (self.cursor.x as usize) < line.render.len() {
-                        self.cursor.x += 1;
+                let cur_line = {
+                    let line = self.buffer.lines[self.cursor.y as usize].render.len();
+                    if self.mode.is_normal() {
+                        line.saturating_sub(1)
+                    } else {
+                        line
                     }
+                };
+
+                if (self.cursor.x as usize) < cur_line {
+                    self.cursor.x += 1;
                 }
             }
         }
 
-        let cur_line = self.buffer.get_line(self.cursor.y as usize);
-        if let Some(line) = cur_line {
-            if (self.cursor.x as usize) > line.render.len() {
-                self.cursor.x = line.render.len().saturating_sub(1) as u16;
-            }
-        }
+        self.check_cursor_bounds();
     }
 
     pub fn scroll(&mut self) {
@@ -361,6 +423,22 @@ impl Editor {
             if message.has_expired() {
                 self.messages.pop_front();
             }
+        }
+    }
+
+    fn check_cursor_bounds(&mut self) {
+        let cur_line = {
+            let line: &str = &self.buffer.lines[self.cursor.y as usize].render;
+            let mode = &self.mode;
+            if mode.is_normal() {
+                line.len().saturating_sub(1)
+            } else {
+                line.len()
+            }
+        };
+
+        if (self.cursor.x as usize) > cur_line {
+            self.cursor.x = cur_line as u16;
         }
     }
 }
