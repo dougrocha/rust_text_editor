@@ -1,4 +1,10 @@
-use std::{cmp, collections::VecDeque, io, time};
+use std::{
+    cmp,
+    collections::VecDeque,
+    io,
+    sync::{Arc, Mutex},
+    time,
+};
 
 use crossterm::{
     cursor,
@@ -9,64 +15,42 @@ use crossterm::{
 use crate::{
     buffer::{Buffer, Line},
     keyboard::Keyboard,
+    mode::Mode,
     screen::{Direction, Position, Screen},
     status_message::Message,
 };
 
 pub type Messages = VecDeque<Message>;
 
-pub enum Mode {
-    Normal,
-    Insert,
-    Command,
-    Visual,
-    VisualLine,
-}
-
-impl Mode {
-    fn is_insert(&self) -> bool {
-        matches!(self, Mode::Insert)
-    }
-
-    fn is_normal(&self) -> bool {
-        matches!(self, Mode::Normal)
-    }
-
-    fn is_command(&self) -> bool {
-        matches!(self, Mode::Command)
-    }
-
-    fn is_visual(&self) -> bool {
-        matches!(self, Mode::Visual)
-    }
-
-    fn is_visual_line(&self) -> bool {
-        matches!(self, Mode::VisualLine)
-    }
-}
-
 pub struct Editor {
     screen: Screen,
     keyboard: Keyboard,
-    buffer: Buffer,
+    buffers: Vec<Arc<Mutex<Buffer>>>,
+
     cursor: Position,
     offset: Position,
     messages: Messages,
 
     mode: Mode,
-    // config: Rc<Config>,
+
+    screen_size: (u16, u16),
 }
 
 impl Editor {
     pub fn new() -> Self {
+        let buffers = vec![Arc::new(Mutex::new(Buffer::new()))];
+
+        let screen_size = terminal::size().unwrap();
+
         Self {
             screen: Screen::new(),
             keyboard: Keyboard,
-            buffer: Buffer::new(),
+            buffers,
             cursor: Position::default(),
             offset: Position::default(),
             messages: VecDeque::new(),
             mode: Mode::Normal,
+            screen_size,
         }
     }
 
@@ -98,11 +82,11 @@ impl Editor {
     pub fn refresh_screen(&mut self) -> io::Result<()> {
         self.scroll();
         self.screen.clear()?;
-        self.screen
-            .draw_gutter(&self.buffer.lines, &self.cursor, &self.offset)?;
-        self.screen.draw_rows(&self.buffer.lines, &self.offset)?;
-        self.screen
-            .draw_status_bar(&self.buffer, &self.cursor, &self.mode)?;
+        // self.screen
+        //     .draw_gutter(&self.buffers.lines, &self.cursor, &self.offset)?;
+        // self.screen.draw_rows(&self.buffers.lines, &self.offset)?;
+        // self.screen
+        //     .draw_status_bar(&self.buffers, &self.cursor, &self.mode)?;
 
         self.purge_messages();
         self.screen.draw_message(&mut self.messages)?;
@@ -163,17 +147,17 @@ impl Editor {
                     'I' => {
                         self.change_mode(Mode::Insert)?;
                         // change cursor to where text begins on line
-                        let index = self.buffer.lines[self.cursor.y as usize]
-                            .render
-                            .find(|c: char| !c.is_whitespace())
-                            .unwrap_or(0);
-
-                        self.cursor.x = index as u16;
+                        // let index = self.buffers.lines[self.cursor.y as usize]
+                        //     .render
+                        //     .find(|c: char| !c.is_whitespace())
+                        //     .unwrap_or(0);
+                        //
+                        // self.cursor.x = index as u16;
                     }
                     'A' => {
                         self.change_mode(Mode::Insert)?;
-                        self.cursor.x =
-                            self.buffer.lines[self.cursor.y as usize].render.len() as u16;
+                        // self.cursor.x =
+                        //     self.buffers.lines[self.cursor.y as usize].render.len() as u16;
                     }
                     _ => {}
                 },
@@ -279,139 +263,139 @@ impl Editor {
             ..
         } = key_event
         {
-            match self.buffer.save() {
-                Ok((bytes, file)) => {
-                    let message_text = format!(
-                        "{:?} bytes written to {:?}",
-                        bytes,
-                        file.unwrap().to_string()
-                    );
-                    self.add_message(Message::with_duration(
-                        message_text,
-                        time::Duration::from_secs(2),
-                    ))
-                }
-                Err(_) => self.add_message(Message::with_duration(
-                    "Error saving file".to_string(),
-                    time::Duration::from_secs(2),
-                )),
-            }
+            // match self.buffers.save() {
+            //     Ok((bytes, file)) => {
+            //         let message_text = format!(
+            //             "{:?} bytes written to {:?}",
+            //             bytes,
+            //             file.unwrap().to_string()
+            //         );
+            //         self.add_message(Message::with_duration(
+            //             message_text,
+            //             time::Duration::from_secs(2),
+            //         ))
+            //     }
+            //     Err(_) => self.add_message(Message::with_duration(
+            //         "Error saving file".to_string(),
+            //         time::Duration::from_secs(2),
+            //     )),
+            // }
         };
 
         Ok(false)
     }
 
     fn insert_character(&mut self, c: char) {
-        if (self.cursor.y as usize) == self.buffer.lines.len() {
-            self.buffer.lines.push(Line::new("".into()));
-        }
-
-        let line = self.buffer.get_line_mut(self.cursor.y as usize).unwrap();
-
-        let at = cmp::min(self.cursor.x as usize, line.render.len());
-
-        line.render.insert(at, c);
-
-        self.cursor.x += 1;
-
-        self.buffer.dirty = true;
+        //     if (self.cursor.y as usize) == self.buffers.lines.len() {
+        //         self.buffers.lines.push(Line::new("".into()));
+        //     }
+        //
+        //     let line = self.buffers.get_line_mut(self.cursor.y as usize).unwrap();
+        //
+        //     let at = cmp::min(self.cursor.x as usize, line.render.len());
+        //
+        //     line.render.insert(at, c);
+        //
+        //     self.cursor.x += 1;
+        //
+        //     self.buffers.dirty = true;
     }
 
     fn delete_character(&mut self) {
-        if self.cursor.y == 0 && self.cursor.x == 0 {
-            return;
-        }
-
-        if self.cursor.x == 0 {
-            let cur_line = self.buffer.lines.remove(self.cursor.y as usize).render;
-
-            let prev_line = self
-                .buffer
-                .get_line_mut(self.cursor.y as usize - 1)
-                .unwrap();
-            let prev_len = prev_line.render.len();
-
-            prev_line.render.push_str(&cur_line);
-
-            self.cursor.y -= 1;
-            self.cursor.x = prev_len as u16;
-
-            return;
-        }
-
-        self.buffer
-            .get_line_mut(self.cursor.y as usize)
-            .unwrap()
-            .render
-            .remove(self.cursor.x as usize - 1);
-        self.cursor.x -= 1;
-
-        self.buffer.dirty = true;
+        // if self.cursor.y == 0 && self.cursor.x == 0 {
+        //     return;
+        // }
+        //
+        // if self.cursor.x == 0 {
+        //     let cur_line = self.buffers.lines.remove(self.cursor.y as usize).render;
+        //
+        //     let prev_line = self
+        //         .buffers
+        //         .get_line_mut(self.cursor.y as usize - 1)
+        //         .unwrap();
+        //     let prev_len = prev_line.render.len();
+        //
+        //     prev_line.render.push_str(&cur_line);
+        //
+        //     self.cursor.y -= 1;
+        //     self.cursor.x = prev_len as u16;
+        //
+        //     return;
+        // }
+        //
+        // self.buffers
+        //     .get_line_mut(self.cursor.y as usize)
+        //     .unwrap()
+        //     .render
+        //     .remove(self.cursor.x as usize - 1);
+        // self.cursor.x -= 1;
+        //
+        // self.buffers.dirty = true;
     }
 
     pub fn insert_newline(&mut self) {
-        let cur_line = self.buffer.get_line_mut(self.cursor.y as usize).unwrap();
-        let new_line = cur_line.render.split_off(self.cursor.x as usize);
-        self.buffer.lines.insert(
-            self.cursor.y as usize + 1,
-            Line::new(new_line.into_boxed_str()),
-        );
-        self.cursor.y += 1;
-        self.cursor.x = 0;
-
-        self.buffer.dirty = true;
+        // let cur_line = self.buffers.get_line_mut(self.cursor.y as usize).unwrap();
+        // let new_line = cur_line.render.split_off(self.cursor.x as usize);
+        // self.buffers.lines.insert(
+        //     self.cursor.y as usize + 1,
+        //     Line::new(new_line.into_boxed_str()),
+        // );
+        // self.cursor.y += 1;
+        // self.cursor.x = 0;
+        //
+        // self.buffers.dirty = true;
     }
 
     pub fn move_cursor(&mut self, direction: Direction) {
-        match direction {
-            Direction::Up => {
-                self.cursor.y = self.cursor.y.saturating_sub(1);
-            }
-            Direction::Down => {
-                if self.cursor.y < self.buffer.lines.len() as u16 - 1 {
-                    self.cursor.y += 1;
-                }
-            }
-            Direction::Left => {
-                self.cursor.x = self.cursor.x.saturating_sub(1);
-            }
-            Direction::Right => {
-                let cur_line = {
-                    let line = self.buffer.lines[self.cursor.y as usize].render.len();
-                    if self.mode.is_normal() {
-                        line.saturating_sub(1)
-                    } else {
-                        line
-                    }
-                };
-
-                if (self.cursor.x as usize) < cur_line {
-                    self.cursor.x += 1;
-                }
-            }
-        }
-
-        self.check_cursor_bounds();
+        // match direction {
+        //     Direction::Up => {
+        //         self.cursor.y = self.cursor.y.saturating_sub(1);
+        //     }
+        //     Direction::Down => {
+        //         if self.cursor.y < self.buffers.lines.len() as u16 - 1 {
+        //             self.cursor.y += 1;
+        //         }
+        //     }
+        //     Direction::Left => {
+        //         self.cursor.x = self.cursor.x.saturating_sub(1);
+        //     }
+        //     Direction::Right => {
+        //         let cur_line = {
+        //             let line = self.buffers.lines[self.cursor.y as usize].render.len();
+        //             if self.mode.is_normal() {
+        //                 line.saturating_sub(1)
+        //             } else {
+        //                 line
+        //             }
+        //         };
+        //
+        //         if (self.cursor.x as usize) < cur_line {
+        //             self.cursor.x += 1;
+        //         }
+        //     }
+        // }
+        //
+        // self.check_cursor_bounds();
     }
 
     pub fn scroll(&mut self) {
-        let scrolloff = 8;
-
-        self.offset.y = cmp::min(self.offset.y, self.cursor.y.saturating_sub(scrolloff));
-        if self.cursor.y >= self.offset.y + self.screen.height.saturating_sub(scrolloff)
-            && self.buffer.lines.len() != (self.offset.y + self.screen.height) as usize
-        {
-            self.offset.y = self
-                .cursor
-                .y
-                .saturating_sub(self.screen.height.saturating_sub(scrolloff))
-                + 1;
-        }
-
-        self.offset.x = cmp::min(self.offset.x, self.cursor.x);
-        if self.cursor.x >= self.offset.x + self.screen.width {
-            self.offset.x = self.cursor.x - self.screen.width + 1;
-        }
+        // let scrolloff = 8;
+        //
+        // self.offset.y = cmp::min(self.offset.y, self.cursor.y.saturating_sub(scrolloff));
+        // if self.cursor.y >= self.offset.y + self.screen.height.saturating_sub(scrolloff)
+        //     && self.buffers.lines.len() != (self.offset.y + self.screen.height) as usize
+        // {
+        //     self.offset.y = self
+        //         .cursor
+        //         .y
+        //         .saturating_sub(self.screen.height.saturating_sub(scrolloff))
+        //         + 1;
+        // }
+        //
+        // self.offset.x = cmp::min(self.offset.x, self.cursor.x);
+        // if self.cursor.x >= self.offset.x + self.screen.width {
+        //     self.offset.x = self.cursor.x - self.screen.width + 1;
+        // }
     }
 
     pub fn add_message(&mut self, message: Message) {
@@ -427,18 +411,18 @@ impl Editor {
     }
 
     fn check_cursor_bounds(&mut self) {
-        let cur_line = {
-            let line: &str = &self.buffer.lines[self.cursor.y as usize].render;
-            let mode = &self.mode;
-            if mode.is_normal() {
-                line.len().saturating_sub(1)
-            } else {
-                line.len()
-            }
-        };
-
-        if (self.cursor.x as usize) > cur_line {
-            self.cursor.x = cur_line as u16;
-        }
+        // let cur_line = {
+        //     let line: &str = &self.buffers.lines[self.cursor.y as usize].render;
+        //     let mode = &self.mode;
+        //     if mode.is_normal() {
+        //         line.len().saturating_sub(1)
+        //     } else {
+        //         line.len()
+        //     }
+        // };
+        //
+        // if (self.cursor.x as usize) > cur_line {
+        //     self.cursor.x = cur_line as u16;
+        // }
     }
 }

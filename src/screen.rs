@@ -6,7 +6,8 @@ use std::{
 
 use crate::{
     buffer::{Buffer, Line},
-    editor::{Messages, Mode},
+    editor::Messages,
+    mode::Mode,
 };
 
 pub enum Direction {
@@ -16,7 +17,7 @@ pub enum Direction {
     Right,
 }
 
-#[derive(Default)]
+#[derive(Default, Clone, Copy)]
 pub struct Position {
     pub x: u16,
     pub y: u16,

@@ -1,6 +1,7 @@
 mod buffer;
 mod editor;
 mod keyboard;
+mod mode;
 mod screen;
 mod status_message;
 

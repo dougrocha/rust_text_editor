@@ -1,9 +1,16 @@
 use std::io;
 use std::path::{Path, PathBuf};
 
+enum BufferState {
+    Active,
+    Hidden,
+}
+
 pub struct Buffer {
     pub lines: Vec<Line>,
     pub file_path: Option<PathBuf>,
+
+    state: BufferState,
 
     // if the buffer has been modified
     pub dirty: bool,
@@ -17,6 +24,7 @@ impl Buffer {
             None => Self {
                 lines: Vec::new(),
                 file_path: None,
+                state: BufferState::Active,
                 dirty: false,
             },
         }
@@ -64,6 +72,7 @@ impl From<&Path> for Buffer {
             file_path: Some(file.to_path_buf()),
             lines: file_contents.lines().map(|s| Line::new(s.into())).collect(),
             dirty: false,
+            state: BufferState::Active,
         }
     }
 }
