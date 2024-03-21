@@ -1,8 +1,17 @@
 [package]
-name = "rust_text_editor"
+name = "editor"
 version = "0.1.0"
+authors = ["Douglas Rocha <79188161+dougrocha@users.noreply.github.com>"]
+description = "Rust Text Editor"
+license = "MIT"
 edition = "2021"
 
 [dependencies]
-crossterm = "0.27.0"
-tokio = "1.36.0"
+clap = { version = "4.5.3", features = ["derive"] }
+crossterm = { version = "0.27.0", features = ["serde", "event-stream"] }
+futures = "0.3.30"
+serde = { version = "1.0.197", features = ["derive"] }
+tokio = { version = "1.36.0", features = ["full"] }
+
+[profile.dev]
+opt-level = 2
