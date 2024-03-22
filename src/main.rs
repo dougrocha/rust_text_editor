@@ -121,22 +121,22 @@ impl Editor {
 
         let mut window = Window::new(
             0,
-            Rect::new(0, 0, terminal_size.width / 2, terminal_size.height),
-            Arc::clone(&buffer),
-        );
-        window.set_focus(true);
-        self.windows.push(window);
-
-        let window_2 = Window::new(
-            1,
             Rect::new(
-                terminal_size.width / 2,
-                0,
-                terminal_size.width,
-                terminal_size.height,
+                terminal_size.start,
+                Vec2::new(terminal_size.width() / 2, terminal_size.height()),
             ),
             Arc::clone(&buffer),
         );
+        window.set_focus(false);
+        self.windows.push(window);
+
+        let mut window_2 = Window::new(
+            1,
+            Rect::new(Vec2::new(terminal_size.width() / 2, 0), terminal_size.end),
+            Arc::clone(&buffer),
+        );
+
+        window_2.set_focus(true);
         self.windows.push(window_2);
 
         loop {
@@ -180,28 +180,29 @@ impl Editor {
     pub fn draw(&mut self) -> io::Result<()> {
         self.terminal.clear()?;
 
-        queue!(self.terminal.writer, cursor::MoveTo(0, 0))?;
+        self.terminal.hide_cursor()?;
 
         for window in self.windows.iter() {
-            let buffer = window.draw();
+            let Rect {
+                start: Vec2 { x: left, y: top },
+                end:
+                    Vec2 {
+                        x: width,
+                        y: height,
+                    },
+            } = window.size;
 
-            let window_size = &window.size;
-
-            for y in window_size.y..window_size.height - 1 {
-                queue!(
-                    self.terminal.writer,
-                    cursor::MoveTo(window_size.x as u16, y as u16)
-                )?;
-
-                for x in window_size.x..window_size.width - 1 {
+            for y in top..height {
+                queue!(self.terminal.writer, cursor::MoveTo(left as u16, y as u16))?;
+                for _x in left..width {
                     queue!(self.terminal.writer, style::Print(format!("{}", window.id)))?;
                 }
             }
         }
 
         self.terminal.show_cursor()?;
-        let window_cursor = self.windows.first().unwrap().get_cursor();
-        self.terminal.set_cursor(window_cursor.0, window_cursor.1)?;
+        let (x, y) = self.windows.iter().find(|x| x.focused).unwrap().cursor;
+        self.terminal.set_cursor(x, y)?;
 
         self.terminal.flush()?;
 
@@ -231,9 +232,10 @@ impl Window {
     fn new(id: i32, size: Rect, buffer: Arc<Mutex<Buffer>>) -> Self {
         Self {
             id,
+            cursor: (size.start.x as u16, size.start.y as u16),
+
             size,
             buffer,
-            cursor: (0, 0),
             focused: false,
         }
     }
@@ -243,43 +245,17 @@ impl Window {
     }
 
     fn set_cursor(&mut self, x: u16, y: u16) {
-        let x = cmp::min(x, self.size.width as u16 - 1);
-        let y = cmp::min(y, self.size.height as u16 - 1);
-
-        self.cursor = (x, y);
-    }
-
-    fn draw(&self) -> Vec<&str> {
-        let mut buf: Vec<&str> = vec![];
-
-        let Rect {
-            x: start_x,
-            y: start_y,
-            width,
-            height,
-        } = self.size;
-
-        for x in start_x..width - 1 {
-            for y in start_y..height - 1 {
-                if x == start_x || x == width - 1 {
-                    buf.push(border::HORIZONTAL);
-                } else if y == start_y || y == height - 1 {
-                    buf.push(border::VERTICAL);
-                } else if x == start_x && y == start_y {
-                    buf.push(border::TOP_LEFT);
-                } else if x == width - 1 && y == start_y {
-                    buf.push(border::TOP_RIGHT);
-                } else if x == start_x && y == height - 1 {
-                    buf.push(border::BOTTOM_LEFT);
-                } else if x == width - 1 && y == height - 1 {
-                    buf.push(border::BOTTOM_RIGHT);
-                } else {
-                    buf.push(" ");
-                }
-            }
+        if x >= self.size.end.x as u16 {
+            self.cursor.0 = self.size.end.x as u16 - 1;
+        } else {
+            self.cursor.0 = cmp::max(x, self.size.start.x as u16);
         }
 
-        buf
+        if y >= self.size.end.y as u16 {
+            self.cursor.1 = self.size.end.y as u16 - 1;
+        } else {
+            self.cursor.1 = cmp::max(y, self.size.start.y as u16);
+        }
     }
 
     fn get_cursor(&self) -> (u16, u16) {
@@ -287,20 +263,54 @@ impl Window {
     }
 }
 
-pub struct Rect {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Vec2 {
     x: usize,
     y: usize,
-    width: usize,
-    height: usize,
 }
+
+impl Vec2 {
+    fn new(x: usize, y: usize) -> Self {
+        Self { x, y }
+    }
+
+    fn zero() -> Self {
+        Self { x: 0, y: 0 }
+    }
+
+    fn width(&self) -> usize {
+        self.x
+    }
+
+    fn height(&self) -> usize {
+        self.y
+    }
+}
+
+#[derive(Debug)]
+pub struct Rect {
+    /// The start position of the rectangle
+    ///
+    /// Normally the top-left corner
+    start: Vec2,
+
+    /// The end position of the rectangle
+    ///
+    /// Normally the bottom-right corner
+    end: Vec2,
+}
+
 impl Rect {
-    fn new(x: usize, y: usize, width: usize, height: usize) -> Rect {
-        Self {
-            x,
-            y,
-            width,
-            height,
-        }
+    fn new(start: Vec2, end: Vec2) -> Rect {
+        Self { start, end }
+    }
+
+    fn width(&self) -> usize {
+        self.end.x - self.start.x
+    }
+
+    fn height(&self) -> usize {
+        self.end.y - self.start.y
     }
 }
 
@@ -315,46 +325,44 @@ impl<W> Terminal<W>
 where
     W: io::Write,
 {
-    pub fn new(writer: W) -> Self {
+    fn new(writer: W) -> Self {
         Self { writer }
     }
 
-    pub fn size(&self) -> io::Result<Rect> {
+    fn size(&self) -> io::Result<Rect> {
         let (width, height) = terminal::size()?;
-        Ok(Rect::new(0, 0, width as usize, height as usize))
+        Ok(Rect {
+            start: Vec2::zero(),
+            end: Vec2::new(width as usize, height as usize),
+        })
     }
 
-    pub fn show_cursor(&mut self) -> io::Result<()> {
+    fn show_cursor(&mut self) -> io::Result<()> {
         execute!(self.writer, cursor::Show)?;
         Ok(())
     }
 
-    pub fn hide_cursor(&mut self) -> io::Result<()> {
+    fn hide_cursor(&mut self) -> io::Result<()> {
         execute!(self.writer, cursor::Hide)?;
         Ok(())
     }
 
-    pub fn move_cursor(&mut self, x: u16, y: u16) -> io::Result<()> {
-        execute!(self.writer, cursor::MoveTo(x, y))?;
-        Ok(())
-    }
-
-    pub fn get_cursor(&mut self) -> io::Result<(u16, u16)> {
+    fn get_cursor(&mut self) -> io::Result<(u16, u16)> {
         let (x, y) = cursor::position()?;
         Ok((x, y))
     }
 
-    pub fn set_cursor(&mut self, x: u16, y: u16) -> io::Result<()> {
+    fn set_cursor(&mut self, x: u16, y: u16) -> io::Result<()> {
         execute!(self.writer, cursor::MoveTo(x, y))?;
         Ok(())
     }
 
-    pub fn clear(&mut self) -> io::Result<()> {
+    fn clear(&mut self) -> io::Result<()> {
         execute!(self.writer, terminal::Clear(terminal::ClearType::All))?;
         Ok(())
     }
 
-    pub fn flush(&mut self) -> io::Result<()> {
+    fn flush(&mut self) -> io::Result<()> {
         self.writer.flush()?;
         Ok(())
     }
