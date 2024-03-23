@@ -1,19 +1,28 @@
 use std::{
+    cell::RefCell,
     cmp, io,
     path::PathBuf,
+    rc::Rc,
     sync::{Arc, Mutex},
 };
 
+use buffer::Buffer;
 use crossterm::{
     cursor,
-    event::KeyCode,
+    event::{KeyCode, KeyEvent},
     execute, queue, style,
     terminal::{self, ClearType},
 };
 
+mod buffer;
 mod event;
+mod symbols;
+mod window;
 
 use event::{Event, EventHandler};
+use window::{Rect, Vec2, Window};
+
+use crate::window::Cell;
 
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
@@ -33,10 +42,13 @@ enum Mode {
 }
 
 struct Editor {
+    tick_rate: f64,
+    frame_time: f64,
+
     terminal: Terminal<io::Stdout>,
     event_handler: EventHandler,
 
-    buffers: Vec<Arc<Mutex<Buffer>>>,
+    buffers: Vec<Rc<RefCell<Buffer>>>,
 
     windows: Vec<Window>,
 
@@ -46,50 +58,14 @@ struct Editor {
     is_running: bool,
 }
 
-struct Line {
-    content: Box<str>,
-    render: String,
-}
-
-impl Line {
-    pub fn new(content: Box<str>) -> Self {
-        Self {
-            render: content.to_string(),
-            content,
-        }
-    }
-}
-
-struct Buffer {
-    file_path: Option<PathBuf>,
-
-    content: Vec<Line>,
-}
-
-impl Buffer {
-    pub fn new() -> Self {
-        Self {
-            file_path: None,
-            content: vec![],
-        }
-    }
-
-    pub fn from_file(file_path: PathBuf) -> io::Result<Self> {
-        let content = std::fs::read_to_string(&file_path)?;
-        let content = content.lines().map(|line| Line::new(line.into())).collect();
-
-        Ok(Self {
-            file_path: Some(file_path),
-            content,
-        })
-    }
-}
-
 impl Editor {
     pub fn new() -> io::Result<Self> {
         let event_handler = EventHandler::new(100);
 
         Ok(Self {
+            tick_rate: 1.0,
+            frame_time: 30.0,
+
             terminal: Terminal::new(io::stdout()),
             event_handler,
 
@@ -106,7 +82,6 @@ impl Editor {
 
     pub fn init(&mut self) -> io::Result<()> {
         terminal::enable_raw_mode()?;
-        self.terminal.show_cursor()?;
         execute!(io::stdout(), terminal::EnterAlternateScreen)?;
         Ok(())
     }
@@ -114,8 +89,8 @@ impl Editor {
     pub async fn run(&mut self) -> Result<()> {
         self.init()?;
 
-        let buffer = Arc::new(Mutex::new(Buffer::from_file(PathBuf::from("test.txt"))?));
-        self.buffers.push(Arc::clone(&buffer));
+        let buffer = Rc::new(RefCell::new(Buffer::from_file(PathBuf::from("test.txt"))?));
+        self.buffers.push(Rc::clone(&buffer));
 
         let terminal_size = self.terminal.size()?;
 
@@ -125,7 +100,7 @@ impl Editor {
                 terminal_size.start,
                 Vec2::new(terminal_size.width() / 2, terminal_size.height()),
             ),
-            Arc::clone(&buffer),
+            Rc::clone(&buffer),
         );
         window.set_focus(false);
         self.windows.push(window);
@@ -133,7 +108,7 @@ impl Editor {
         let mut window_2 = Window::new(
             1,
             Rect::new(Vec2::new(terminal_size.width() / 2, 0), terminal_size.end),
-            Arc::clone(&buffer),
+            Rc::clone(&buffer),
         );
 
         window_2.set_focus(true);
@@ -145,20 +120,13 @@ impl Editor {
             match self.event_handler.next().await? {
                 Event::Tick => {}
                 Event::Key(key_event) => {
-                    let window = self.windows.iter_mut().find(|x| x.focused).unwrap();
-
-                    let (x, y) = window.cursor;
-
                     if key_event.code == KeyCode::Char('q') {
                         self.is_running = false;
-                    } else if key_event.code == KeyCode::Down {
-                        window.set_cursor(x, y + 1);
-                    } else if key_event.code == KeyCode::Up {
-                        window.set_cursor(x, y.saturating_sub(1));
-                    } else if key_event.code == KeyCode::Left {
-                        window.set_cursor(x.saturating_sub(1), y);
-                    } else if key_event.code == KeyCode::Right {
-                        window.set_cursor(x + 1, y);
+                    }
+
+                    if let Some(window) = self.windows.iter_mut().find(|x| x.is_focused()) {
+                        window.handle_key_event(key_event);
+                        window.scroll();
                     }
                 }
                 Event::Mouse(_) => {}
@@ -173,36 +141,40 @@ impl Editor {
         }
 
         self.cleanup()?;
+        self.terminal.flush()?;
 
         Ok(())
     }
 
     pub fn draw(&mut self) -> io::Result<()> {
-        self.terminal.clear()?;
-
         self.terminal.hide_cursor()?;
 
-        for window in self.windows.iter() {
-            let Rect {
-                start: Vec2 { x: left, y: top },
-                end:
-                    Vec2 {
-                        x: width,
-                        y: height,
-                    },
-            } = window.size;
+        let terminal_size = self.terminal.size()?;
 
-            for y in top..height {
-                queue!(self.terminal.writer, cursor::MoveTo(left as u16, y as u16))?;
-                for _x in left..width {
-                    queue!(self.terminal.writer, style::Print(format!("{}", window.id)))?;
-                }
-            }
+        let mut frame = Frame::new(terminal_size);
+
+        for window in self.windows.iter_mut() {
+            window.draw(&mut frame);
         }
 
-        self.terminal.show_cursor()?;
-        let (x, y) = self.windows.iter().find(|x| x.focused).unwrap().cursor;
-        self.terminal.set_cursor(x, y)?;
+        self.terminal.set_cursor(0, 0)?;
+        for cell in frame.cells.iter() {
+            let char = cell.symbol();
+            queue!(self.terminal.writer, style::Print(char))?;
+        }
+
+        if let Some(focused_window) = self.windows.iter().find(|x| x.is_focused()) {
+            let (x, y) = focused_window.get_cursor();
+            let top = focused_window.size.top();
+            let left = focused_window.size.left();
+            let (offset_x, offset_y) = focused_window.offset;
+
+            self.terminal.show_cursor()?;
+            self.terminal.set_cursor(
+                x - offset_x as u16 + left as u16,
+                y - offset_y as u16 + top as u16,
+            )?;
+        }
 
         self.terminal.flush()?;
 
@@ -217,100 +189,27 @@ impl Editor {
     }
 }
 
-struct Window {
-    id: i32,
-
-    size: Rect,
-    buffer: Arc<Mutex<Buffer>>,
-
-    cursor: (u16, u16),
-
-    focused: bool,
+pub struct Frame {
+    pub size: Rect,
+    pub cells: Vec<Cell>,
 }
 
-impl Window {
-    fn new(id: i32, size: Rect, buffer: Arc<Mutex<Buffer>>) -> Self {
-        Self {
-            id,
-            cursor: (size.start.x as u16, size.start.y as u16),
+impl Frame {
+    pub fn new(size: Rect) -> Self {
+        let cells = vec![Cell::default(); size.area()];
+        Self { size, cells }
+    }
 
-            size,
-            buffer,
-            focused: false,
+    pub fn set_cell(&mut self, x: usize, y: usize, char: &str) {
+        let index = y * self.size.width() + x;
+        if let Some(cell) = self.cells.get_mut(index) {
+            cell.set_cell(char);
         }
     }
 
-    fn set_focus(&mut self, focused: bool) {
-        self.focused = focused;
-    }
-
-    fn set_cursor(&mut self, x: u16, y: u16) {
-        if x >= self.size.end.x as u16 {
-            self.cursor.0 = self.size.end.x as u16 - 1;
-        } else {
-            self.cursor.0 = cmp::max(x, self.size.start.x as u16);
-        }
-
-        if y >= self.size.end.y as u16 {
-            self.cursor.1 = self.size.end.y as u16 - 1;
-        } else {
-            self.cursor.1 = cmp::max(y, self.size.start.y as u16);
-        }
-    }
-
-    fn get_cursor(&self) -> (u16, u16) {
-        self.cursor
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct Vec2 {
-    x: usize,
-    y: usize,
-}
-
-impl Vec2 {
-    fn new(x: usize, y: usize) -> Self {
-        Self { x, y }
-    }
-
-    fn zero() -> Self {
-        Self { x: 0, y: 0 }
-    }
-
-    fn width(&self) -> usize {
-        self.x
-    }
-
-    fn height(&self) -> usize {
-        self.y
-    }
-}
-
-#[derive(Debug)]
-pub struct Rect {
-    /// The start position of the rectangle
-    ///
-    /// Normally the top-left corner
-    start: Vec2,
-
-    /// The end position of the rectangle
-    ///
-    /// Normally the bottom-right corner
-    end: Vec2,
-}
-
-impl Rect {
-    fn new(start: Vec2, end: Vec2) -> Rect {
-        Self { start, end }
-    }
-
-    fn width(&self) -> usize {
-        self.end.x - self.start.x
-    }
-
-    fn height(&self) -> usize {
-        self.end.y - self.start.y
+    pub fn get_cell(&self, x: usize, y: usize) -> &Cell {
+        let index = y * self.size.width() + x;
+        &self.cells[index]
     }
 }
 
@@ -338,12 +237,12 @@ where
     }
 
     fn show_cursor(&mut self) -> io::Result<()> {
-        execute!(self.writer, cursor::Show)?;
+        queue!(self.writer, cursor::Show)?;
         Ok(())
     }
 
     fn hide_cursor(&mut self) -> io::Result<()> {
-        execute!(self.writer, cursor::Hide)?;
+        queue!(self.writer, cursor::Hide)?;
         Ok(())
     }
 
@@ -353,12 +252,12 @@ where
     }
 
     fn set_cursor(&mut self, x: u16, y: u16) -> io::Result<()> {
-        execute!(self.writer, cursor::MoveTo(x, y))?;
+        queue!(self.writer, cursor::MoveTo(x, y))?;
         Ok(())
     }
 
     fn clear(&mut self) -> io::Result<()> {
-        execute!(self.writer, terminal::Clear(terminal::ClearType::All))?;
+        queue!(self.writer, terminal::Clear(terminal::ClearType::All))?;
         Ok(())
     }
 
@@ -366,14 +265,4 @@ where
         self.writer.flush()?;
         Ok(())
     }
-}
-
-mod border {
-    pub const VERTICAL: &str = "│";
-    pub const HORIZONTAL: &str = "─";
-
-    pub const TOP_LEFT: &str = "┌";
-    pub const TOP_RIGHT: &str = "┐";
-    pub const BOTTOM_LEFT: &str = "└";
-    pub const BOTTOM_RIGHT: &str = "┘";
 }
