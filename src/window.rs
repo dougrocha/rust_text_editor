@@ -132,7 +132,10 @@ impl Component for Window {
                 let mut buffer = self.buffer.borrow_mut();
                 self.cursor = buffer.insert_character(c, self.cursor.0, self.cursor.1);
             }
-
+            KeyCode::Enter => {
+                let mut buffer = self.buffer.borrow_mut();
+                self.cursor = buffer.insert_newline(self.cursor.0, self.cursor.1);
+            }
             KeyCode::Backspace => {
                 let mut buffer = self.buffer.borrow_mut();
                 self.cursor = buffer.delete_character(self.cursor.0, self.cursor.1);

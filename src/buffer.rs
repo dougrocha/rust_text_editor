@@ -55,7 +55,7 @@ impl Buffer {
     }
 
     pub fn insert_character(&mut self, c: char, x: u16, y: u16) -> (u16, u16) {
-        let mut x = x as usize;
+        let x = x as usize;
         let y = y as usize;
 
         if y == self.content.len() {
@@ -66,15 +66,14 @@ impl Buffer {
         let at = std::cmp::min(x, line.render.len());
 
         line.render.insert(at, c);
-        x += 1;
         self.is_dirty = true;
 
-        (x as u16, y as u16)
+        (x as u16 + 1, y as u16)
     }
 
     pub fn delete_character(&mut self, x: u16, y: u16) -> (u16, u16) {
-        let mut x = x as usize;
-        let mut y = y as usize;
+        let x = x as usize;
+        let y = y as usize;
 
         if x == 0 && y == 0 {
             return (0, 0);
@@ -87,17 +86,37 @@ impl Buffer {
             let prev_line_len = prev_line.render.len();
 
             prev_line.render.push_str(&line);
-            y -= 1;
-            x = prev_line_len;
 
-            return (x as u16, y as u16);
+            return (prev_line_len as u16, y as u16 - 1);
         }
 
         self.get_line_mut(y).unwrap().render.remove(x - 1);
-        x -= 1;
 
         self.is_dirty = true;
 
-        (x as u16, y as u16)
+        (x as u16 - 1, y as u16)
+    }
+
+    pub fn insert_newline(&mut self, x: u16, y: u16) -> (u16, u16) {
+        let x = x as usize;
+        let y = y as usize;
+
+        let line = self.get_line_mut(y).unwrap();
+        let line_len = line.render.len();
+
+        if x == line_len {
+            self.content.insert(y + 1, Line::new("".into()));
+            return (0, y as u16 + 1);
+        }
+
+        if x == 0 {
+            self.content.insert(y, Line::new("".into()));
+            return (0, y as u16 + 1);
+        }
+
+        let right = line.render.split_off(x);
+        self.content.insert(y + 1, Line::new(right.into()));
+
+        (0, y as u16 + 1)
     }
 }
