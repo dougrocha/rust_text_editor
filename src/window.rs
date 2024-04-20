@@ -64,7 +64,10 @@ impl Window {
         let width = self.size.width();
         let height = self.size.height();
 
-        let buffer_len = self.buffer.borrow().content.len();
+        let buffer = self.buffer.borrow();
+        let buffer_len = buffer.content.len();
+
+        let line_len = buffer.get_line(cursor_y).unwrap().render.len();
 
         self.offset.1 = cmp::min(self.offset.1, cursor_y.saturating_sub(scroll_off));
         if cursor_y >= self.offset.1 + height.saturating_sub(scroll_off)
@@ -73,9 +76,11 @@ impl Window {
             self.offset.1 = cursor_y.saturating_sub(height.saturating_sub(scroll_off)) + 1;
         }
 
-        self.offset.0 = cmp::min(self.offset.0, cursor_x);
-        if cursor_x >= self.offset.0 + width {
-            self.offset.0 = cursor_x - width + 1;
+        self.offset.0 = cmp::min(self.offset.0, cursor_x.saturating_sub(scroll_off));
+        if cursor_x >= self.offset.0 + width.saturating_sub(scroll_off)
+            && line_len != (self.offset.0 + width)
+        {
+            self.offset.0 = cursor_x.saturating_sub(width.saturating_sub(scroll_off)) + 1;
         }
     }
 
