@@ -1,6 +1,8 @@
 use color_eyre::Result;
 use std::path::PathBuf;
 
+use crate::Vec2;
+
 pub struct Line {
     content: Box<str>,
     pub render: String,
@@ -15,10 +17,13 @@ impl Line {
     }
 }
 
+#[derive(Default)]
 pub struct Buffer {
     pub file_path: Option<PathBuf>,
 
     pub content: Vec<Line>,
+
+    pub is_dirty: bool,
 }
 
 impl Buffer {
@@ -26,6 +31,7 @@ impl Buffer {
         Self {
             file_path: None,
             content: vec![],
+            is_dirty: false,
         }
     }
 
@@ -36,10 +42,62 @@ impl Buffer {
         Ok(Self {
             file_path: Some(file_path),
             content,
+            is_dirty: false,
         })
     }
 
     pub fn get_line(&self, index: usize) -> Option<&Line> {
         self.content.get(index)
+    }
+
+    pub fn get_line_mut(&mut self, index: usize) -> Option<&mut Line> {
+        self.content.get_mut(index)
+    }
+
+    pub fn insert_character(&mut self, c: char, x: u16, y: u16) -> (u16, u16) {
+        let mut x = x as usize;
+        let y = y as usize;
+
+        if y == self.content.len() {
+            self.content.push(Line::new("".into()));
+        }
+
+        let line = self.get_line_mut(y).unwrap();
+        let at = std::cmp::min(x, line.render.len());
+
+        line.render.insert(at, c);
+        x += 1;
+        self.is_dirty = true;
+
+        (x as u16, y as u16)
+    }
+
+    pub fn delete_character(&mut self, x: u16, y: u16) -> (u16, u16) {
+        let mut x = x as usize;
+        let mut y = y as usize;
+
+        if x == 0 && y == 0 {
+            return (0, 0);
+        }
+
+        if x == 0 && y != 0 {
+            let line = self.content.remove(y).render;
+            let prev_line = self.get_line_mut(y - 1).unwrap();
+
+            let prev_line_len = prev_line.render.len();
+
+            prev_line.render.push_str(&line);
+            y -= 1;
+            x = prev_line_len;
+
+            return (x as u16, y as u16);
+        }
+
+        self.get_line_mut(y).unwrap().render.remove(x - 1);
+        x -= 1;
+
+        self.is_dirty = true;
+
+        (x as u16, y as u16)
     }
 }

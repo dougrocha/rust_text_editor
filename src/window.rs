@@ -78,45 +78,61 @@ impl Window {
             self.offset.0 = cursor_x - width + 1;
         }
     }
+
+    pub fn move_cursor(&mut self, key_event: KeyEvent) {
+        let buffer = self.buffer.borrow();
+        let cur_line = buffer.get_line(self.cursor.1 as usize);
+
+        if cur_line.is_none() {
+            return;
+        }
+
+        let cur_line_len = cur_line.unwrap().render.len() as u16;
+
+        match key_event.code {
+            KeyCode::Down => {
+                if self.cursor.1 < buffer.content.len() as u16 - 1 {
+                    self.cursor.1 += 1;
+                }
+            }
+            KeyCode::Up => {
+                self.cursor.1 = self.cursor.1.saturating_sub(1);
+            }
+            KeyCode::Left => {
+                self.cursor.0 = self.cursor.0.saturating_sub(1);
+            }
+            KeyCode::Right => {
+                if self.cursor.0 < cur_line_len {
+                    self.cursor.0 += 1;
+                }
+            }
+            _ => {}
+        }
+
+        let cur_line = buffer.get_line(self.cursor.1 as usize);
+        let cur_line_len = cur_line.unwrap().render.len() as u16;
+        if self.cursor.0 > cur_line_len {
+            self.cursor.0 = cur_line_len;
+        }
+    }
 }
 
 impl Component for Window {
     fn handle_key_events(&mut self, key_event: KeyEvent) -> Result<Option<Action>> {
-        {
-            let buffer = self.buffer.borrow();
-            let cur_line = buffer.get_line(self.cursor.1 as usize);
-
-            if cur_line.is_none() {
-                return Ok(None);
+        match key_event.code {
+            KeyCode::Up | KeyCode::Down | KeyCode::Left | KeyCode::Right => {
+                self.move_cursor(key_event)
+            }
+            KeyCode::Char(c) => {
+                let mut buffer = self.buffer.borrow_mut();
+                self.cursor = buffer.insert_character(c, self.cursor.0, self.cursor.1);
             }
 
-            let cur_line_len = cur_line.unwrap().render.len() as u16;
-
-            match key_event.code {
-                KeyCode::Down => {
-                    if self.cursor.1 < buffer.content.len() as u16 - 1 {
-                        self.cursor.1 += 1;
-                    }
-                }
-                KeyCode::Up => {
-                    self.cursor.1 = self.cursor.1.saturating_sub(1);
-                }
-                KeyCode::Left => {
-                    self.cursor.0 = self.cursor.0.saturating_sub(1);
-                }
-                KeyCode::Right => {
-                    if self.cursor.0 < cur_line_len {
-                        self.cursor.0 += 1;
-                    }
-                }
-                _ => {}
+            KeyCode::Backspace => {
+                let mut buffer = self.buffer.borrow_mut();
+                self.cursor = buffer.delete_character(self.cursor.0, self.cursor.1);
             }
-
-            let cur_line = buffer.get_line(self.cursor.1 as usize);
-            let cur_line_len = cur_line.unwrap().render.len() as u16;
-            if self.cursor.0 > cur_line_len {
-                self.cursor.0 = cur_line_len;
-            }
+            _ => {}
         }
 
         Ok(None)
