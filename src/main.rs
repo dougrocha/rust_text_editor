@@ -1,30 +1,18 @@
-use std::{
-    cell::RefCell,
-    cmp, io,
-    path::PathBuf,
-    rc::Rc,
-    sync::{Arc, Mutex},
+use std::{cell::RefCell, path::PathBuf, rc::Rc};
+
+use color_eyre::eyre::Result;
+use crossterm::{event::KeyCode, queue, style};
+use editor::{
+    action::Action,
+    buffer::Buffer,
+    component::Component,
+    event::{self, Event},
+    frame::Frame,
+    terminal::Terminal,
+    window::Window,
+    Rect,
 };
-
-use buffer::Buffer;
-use crossterm::{
-    cursor,
-    event::{KeyCode, KeyEvent},
-    execute, queue, style,
-    terminal::{self, ClearType},
-};
-
-mod buffer;
-mod event;
-mod symbols;
-mod window;
-
-use event::{Event, EventHandler};
-use window::{Rect, Vec2, Window};
-
-use crate::window::Cell;
-
-pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
+use tokio::sync::mpsc;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -35,234 +23,142 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-enum Mode {
-    Normal,
-    Insert,
-    Visual,
-}
-
 struct Editor {
-    tick_rate: f64,
-    frame_time: f64,
-
-    terminal: Terminal<io::Stdout>,
-    event_handler: EventHandler,
+    terminal: Terminal,
 
     buffers: Vec<Rc<RefCell<Buffer>>>,
 
-    windows: Vec<Window>,
-
-    mode: Mode,
-    cursor: (u16, u16),
+    components: Vec<Box<dyn Component>>,
 
     is_running: bool,
+
+    viewport: Rect,
 }
 
 impl Editor {
-    pub fn new() -> io::Result<Self> {
-        let event_handler = EventHandler::new(100);
+    pub fn new() -> Result<Self> {
+        let terminal_event_handler = event::EventHandler::new(4.0, 60.0);
+        let terminal = Terminal::new(terminal_event_handler);
+
+        let mut buffers = vec![];
+
+        let buffer = Rc::new(RefCell::new(Buffer::from_file(PathBuf::from("test.txt"))?));
+        buffers.push(Rc::clone(&buffer));
+
+        let window = Window::new(0, terminal.size()?, buffer);
 
         Ok(Self {
-            tick_rate: 1.0,
-            frame_time: 30.0,
+            terminal,
 
-            terminal: Terminal::new(io::stdout()),
-            event_handler,
-
-            buffers: vec![],
-            windows: vec![],
-
-            mode: Mode::Normal,
-
-            cursor: (0, 0),
+            buffers,
+            components: vec![Box::new(window)],
 
             is_running: true,
+            viewport: Rect::ZERO,
         })
     }
 
-    pub fn init(&mut self) -> io::Result<()> {
-        terminal::enable_raw_mode()?;
-        execute!(io::stdout(), terminal::EnterAlternateScreen)?;
-        Ok(())
-    }
-
     pub async fn run(&mut self) -> Result<()> {
-        self.init()?;
+        let (action_tx, mut action_rx) = mpsc::unbounded_channel::<Action>();
 
-        let buffer = Rc::new(RefCell::new(Buffer::from_file(PathBuf::from("test.txt"))?));
-        self.buffers.push(Rc::clone(&buffer));
+        self.terminal.start()?;
+        self.viewport = self.terminal.size()?;
 
-        let terminal_size = self.terminal.size()?;
+        for window in self.components.iter_mut() {
+            window.register_action_handler(action_tx.clone())?;
+        }
 
-        let mut window = Window::new(
-            0,
-            Rect::new(
-                terminal_size.start,
-                Vec2::new(terminal_size.width() / 2, terminal_size.height()),
-            ),
-            Rc::clone(&buffer),
-        );
-        window.set_focus(false);
-        self.windows.push(window);
-
-        let mut window_2 = Window::new(
-            1,
-            Rect::new(Vec2::new(terminal_size.width() / 2, 0), terminal_size.end),
-            Rc::clone(&buffer),
-        );
-
-        window_2.set_focus(true);
-        self.windows.push(window_2);
+        for window in self.components.iter_mut() {
+            window.init()?;
+        }
 
         loop {
-            self.draw()?;
+            if let Some(e) = self.terminal.event_handler.next().await {
+                match e {
+                    Event::Exit => action_tx.send(Action::Quit)?,
+                    Event::Tick => action_tx.send(Action::Tick)?,
+                    Event::Render => action_tx.send(Action::Render)?,
+                    Event::Resize(x, y) => action_tx.send(Action::Resize(x, y))?,
+                    Event::Key(key_event) => {
+                        if key_event.code == KeyCode::Char('q') {
+                            action_tx.send(Action::Quit)?;
+                        }
 
-            match self.event_handler.next().await? {
-                Event::Tick => {}
-                Event::Key(key_event) => {
-                    if key_event.code == KeyCode::Char('q') {
-                        self.is_running = false;
+                        action_tx.send(Action::Key(key_event))?
                     }
 
-                    if let Some(window) = self.windows.iter_mut().find(|x| x.is_focused()) {
-                        window.handle_key_event(key_event);
-                        window.scroll();
+                    _ => {}
+                }
+
+                for window in self.components.iter_mut() {
+                    if let Some(action) = window.handle_events(Some(e.clone()))? {
+                        action_tx.send(action)?;
                     }
                 }
-                Event::Mouse(_) => {}
-                Event::Resize(_x, _y) => {
-                    // self.terminal.resize((x, y));
+            }
+
+            while let Ok(action) = action_rx.try_recv() {
+                match action {
+                    Action::Quit => self.is_running = false,
+                    Action::Render => self.draw()?,
+                    Action::Tick => {}
+                    Action::Resize(x, y) => {
+                        self.viewport = Rect::new(0, 0, x as usize, y as usize);
+                    }
+                    Action::Key(key_event) => {
+                        for component in self.components.iter_mut() {
+                            component.handle_key_events(key_event)?;
+                        }
+                    }
+                    _ => {}
                 }
             }
 
             if !self.is_running {
+                self.terminal.stop()?;
                 break;
             }
         }
 
-        self.cleanup()?;
+        self.terminal.cleanup()?;
+
+        Ok(())
+    }
+
+    fn draw(&mut self) -> Result<()> {
+        let mut frame = Frame::new(self.viewport);
+
+        for window in self.components.iter_mut() {
+            window.draw(&mut frame)?;
+        }
+
+        let cursor_position = frame.cursor_position;
+
+        self.terminal.hide_cursor()?;
+        self.flush(&frame)?;
+
+        match cursor_position {
+            None => {
+                self.terminal.hide_cursor()?;
+            }
+            Some((x, y)) => {
+                self.terminal.set_cursor(x, y)?;
+                self.terminal.show_cursor()?;
+            }
+        }
+
         self.terminal.flush()?;
 
         Ok(())
     }
 
-    pub fn draw(&mut self) -> io::Result<()> {
-        self.terminal.hide_cursor()?;
-
-        let terminal_size = self.terminal.size()?;
-
-        let mut frame = Frame::new(terminal_size);
-
-        for window in self.windows.iter_mut() {
-            window.draw(&mut frame);
-        }
-
-        self.terminal.set_cursor(0, 0)?;
+    fn flush(&mut self, frame: &Frame) -> Result<()> {
+        queue!(self.terminal.out, crossterm::cursor::MoveTo(0, 0))?;
         for cell in frame.cells.iter() {
             let char = cell.symbol();
-            queue!(self.terminal.writer, style::Print(char))?;
+            queue!(self.terminal.out, style::Print(char))?;
         }
 
-        if let Some(focused_window) = self.windows.iter().find(|x| x.is_focused()) {
-            let (x, y) = focused_window.get_cursor();
-            let top = focused_window.size.top();
-            let left = focused_window.size.left();
-            let (offset_x, offset_y) = focused_window.offset;
-
-            self.terminal.show_cursor()?;
-            self.terminal.set_cursor(
-                x - offset_x as u16 + left as u16,
-                y - offset_y as u16 + top as u16,
-            )?;
-        }
-
-        self.terminal.flush()?;
-
-        Ok(())
-    }
-
-    pub fn cleanup(&mut self) -> io::Result<()> {
-        execute!(io::stdout(), terminal::LeaveAlternateScreen)?;
-        self.terminal.show_cursor()?;
-        terminal::disable_raw_mode()?;
-        Ok(())
-    }
-}
-
-pub struct Frame {
-    pub size: Rect,
-    pub cells: Vec<Cell>,
-}
-
-impl Frame {
-    pub fn new(size: Rect) -> Self {
-        let cells = vec![Cell::default(); size.area()];
-        Self { size, cells }
-    }
-
-    pub fn set_cell(&mut self, x: usize, y: usize, char: &str) {
-        let index = y * self.size.width() + x;
-        if let Some(cell) = self.cells.get_mut(index) {
-            cell.set_cell(char);
-        }
-    }
-
-    pub fn get_cell(&self, x: usize, y: usize) -> &Cell {
-        let index = y * self.size.width() + x;
-        &self.cells[index]
-    }
-}
-
-pub struct Terminal<W>
-where
-    W: io::Write,
-{
-    writer: W,
-}
-
-impl<W> Terminal<W>
-where
-    W: io::Write,
-{
-    fn new(writer: W) -> Self {
-        Self { writer }
-    }
-
-    fn size(&self) -> io::Result<Rect> {
-        let (width, height) = terminal::size()?;
-        Ok(Rect {
-            start: Vec2::zero(),
-            end: Vec2::new(width as usize, height as usize),
-        })
-    }
-
-    fn show_cursor(&mut self) -> io::Result<()> {
-        queue!(self.writer, cursor::Show)?;
-        Ok(())
-    }
-
-    fn hide_cursor(&mut self) -> io::Result<()> {
-        queue!(self.writer, cursor::Hide)?;
-        Ok(())
-    }
-
-    fn get_cursor(&mut self) -> io::Result<(u16, u16)> {
-        let (x, y) = cursor::position()?;
-        Ok((x, y))
-    }
-
-    fn set_cursor(&mut self, x: u16, y: u16) -> io::Result<()> {
-        queue!(self.writer, cursor::MoveTo(x, y))?;
-        Ok(())
-    }
-
-    fn clear(&mut self) -> io::Result<()> {
-        queue!(self.writer, terminal::Clear(terminal::ClearType::All))?;
-        Ok(())
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
-        self.writer.flush()?;
         Ok(())
     }
 }

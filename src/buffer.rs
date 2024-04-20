@@ -1,4 +1,5 @@
-use std::{io, path::PathBuf};
+use color_eyre::Result;
+use std::path::PathBuf;
 
 pub struct Line {
     content: Box<str>,
@@ -28,7 +29,7 @@ impl Buffer {
         }
     }
 
-    pub fn from_file(file_path: PathBuf) -> io::Result<Self> {
+    pub fn from_file(file_path: PathBuf) -> Result<Self> {
         let content = std::fs::read_to_string(&file_path)?;
         let content = content.lines().map(|line| Line::new(line.into())).collect();
 
