@@ -1,5 +1,6 @@
 use std::{cell::RefCell, path::PathBuf, rc::Rc};
 
+use clap::Parser;
 use color_eyre::eyre::Result;
 use crossterm::{event::KeyCode, queue, style};
 use editor::{
@@ -14,9 +15,22 @@ use editor::{
 };
 use tokio::sync::mpsc;
 
+#[derive(Parser)]
+#[command(name = "rim")]
+#[command(about = "A wack rust text editor", long_about = None)]
+struct Cli {
+    file_path: Option<PathBuf>,
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
-    let mut app = Editor::new()?;
+    let cli = Cli::parse();
+
+    let mut app = if let Some(file_path) = cli.file_path {
+        Editor::with_file(file_path)
+    } else {
+        Editor::new()
+    }?;
 
     app.run().await?;
 
@@ -40,17 +54,30 @@ impl Editor {
         let terminal_event_handler = event::EventHandler::new(4.0, 60.0);
         let terminal = Terminal::new(terminal_event_handler);
 
-        let mut buffers = vec![];
+        Ok(Self {
+            terminal,
 
-        let buffer = Rc::new(RefCell::new(Buffer::from_file(PathBuf::from("test.txt"))?));
-        buffers.push(Rc::clone(&buffer));
+            buffers: vec![],
+            components: vec![],
 
-        let window = Window::new(0, terminal.size()?, buffer);
+            is_running: true,
+            viewport: Rect::ZERO,
+        })
+    }
+
+    pub fn with_file(file_path: PathBuf) -> Result<Self> {
+        let terminal_event_handler = event::EventHandler::new(4.0, 60.0);
+        let terminal = Terminal::new(terminal_event_handler);
+
+        let buffer = Rc::new(RefCell::new(Buffer::from_file(file_path)?));
+
+        let mut window = Window::new(0, terminal.size()?, Rc::clone(&buffer));
+        window.set_focus(true);
 
         Ok(Self {
             terminal,
 
-            buffers,
+            buffers: vec![buffer],
             components: vec![Box::new(window)],
 
             is_running: true,
