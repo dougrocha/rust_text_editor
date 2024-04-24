@@ -1,15 +1,20 @@
-#[derive(Debug)]
+use std::{fmt, string::ToString};
+
+use serde::{
+  de::{self, Deserializer, Visitor},
+  Deserialize, Serialize,
+};
+use strum::Display;
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Display, Deserialize)]
 pub enum Action {
-    /// Tick Event
-    Tick,
-    /// Render Event
-    Render,
-    /// Initialization Event
-    Init,
-    /// Terminal Resize Event
-    Resize(u16, u16),
-    /// Keyboard Event
-    Key(crossterm::event::KeyEvent),
-    /// Quit Event
-    Quit,
+  Tick,
+  Render,
+  Resize(u16, u16),
+  Suspend,
+  Resume,
+  Quit,
+  Refresh,
+  Error(String),
+  Help,
 }
