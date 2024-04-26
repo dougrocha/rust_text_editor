@@ -2,43 +2,51 @@ use std::path::PathBuf;
 
 use color_eyre::eyre::Result;
 use crossterm::event::KeyEvent;
-use ratatui::prelude::Rect;
+use ratatui::{
+    layout::Rect,
+    text::{Line, Text},
+    widgets::Paragraph,
+};
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
 
 use crate::{
     action::Action,
-    components::{editor::Editor, fps::FpsCounter, Component},
+    components::{editor::Editor as EditorView, fps::FpsCounter, Component},
     config::Config,
     mode::Mode,
     tui,
 };
 
-pub struct App {
+pub struct Editor {
     tick_rate: f64,
     frame_rate: f64,
+
     pub config: Config,
     pub components: Vec<Box<dyn Component>>,
     pub should_quit: bool,
     pub should_suspend: bool,
+
     pub mode: Mode,
     pub last_tick_key_events: Vec<KeyEvent>,
 }
 
-impl App {
-    pub fn new(file_paths: Option<Vec<PathBuf>>) -> Result<Self> {
+impl Editor {
+    pub fn new(file_paths: Vec<PathBuf>) -> Result<Self> {
         let tick_rate = 4.0;
         let frame_rate = 60.0;
 
         let fps = FpsCounter::default();
-        let editor = Editor::new(file_paths);
+        let editor_view = EditorView::new(file_paths);
 
         let config = Config::new()?;
-        let mode = Mode::Home;
+
+        let mode = Mode::Normal;
+
         Ok(Self {
             tick_rate,
             frame_rate,
-            components: vec![Box::new(fps), Box::new(editor)],
+            components: vec![Box::new(fps), Box::new(editor_view)],
             should_quit: false,
             should_suspend: false,
             config,

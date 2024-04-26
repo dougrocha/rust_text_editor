@@ -7,5 +7,6 @@ use crate::utils::version;
 #[derive(Parser, Debug)]
 #[command(author, version = version(), about)]
 pub struct Cli {
-    pub file_paths: Option<Vec<PathBuf>>,
+    #[clap(name = "file")]
+    pub files: Vec<PathBuf>,
 }

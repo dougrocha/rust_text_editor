@@ -2,27 +2,36 @@ use std::{fs, path::PathBuf};
 
 use color_eyre::eyre::Result;
 use crossterm::event::{KeyCode, KeyEvent};
-use ratatui::{prelude::*, widgets::*};
+use ratatui::{layout::Position, prelude::*, widgets::*};
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc::UnboundedSender;
 
 use super::{Component, Frame};
-use crate::{action::Action, config::Config};
+use crate::{
+    action::Action, buffer::Buffer, config::Config, mode::Mode, utils::version, window::Window,
+};
 
 #[derive(Default)]
 pub struct Editor {
     config: Config,
     command_tx: Option<UnboundedSender<Action>>,
-    buffer: Vec<String>,
+
+    buffers: Vec<Buffer>,
+    window: Window,
 }
 
 impl Editor {
-    pub fn new(file_paths: Option<Vec<PathBuf>>) -> Self {
-        let buffer = fs::read_to_string(file_paths.unwrap().first().unwrap()).unwrap();
-        let buffer = buffer.lines().map(|line| line.into()).collect();
+    pub fn new(file_paths: Vec<PathBuf>) -> Self {
+        let buffers: Vec<Buffer> = file_paths
+            .iter()
+            .enumerate()
+            .map(|(i, line)| Buffer::new(i, Some(line)))
+            .collect();
+
+        let window = Window::new(0, 0);
 
         Self {
-            buffer,
+            buffers,
             ..Default::default()
         }
     }
@@ -39,6 +48,18 @@ impl Component for Editor {
         Ok(())
     }
 
+    fn handle_key_events(&mut self, key: KeyEvent) -> Result<Option<Action>> {
+        if let Some(keymap) = self.config.keybindings.get(&Mode::Normal) {}
+
+        match key.code {
+            KeyCode::Char('h' | 'j' | 'k' | 'l') => {
+                let some = "";
+            }
+            _ => {}
+        }
+        Ok(None)
+    }
+
     fn update(&mut self, action: Action) -> Result<Option<Action>> {
         match action {
             Action::Tick => {}
@@ -48,17 +69,35 @@ impl Component for Editor {
     }
 
     fn draw(&mut self, f: &mut Frame<'_>, area: Rect) -> Result<()> {
-        // TODO: Make a seperate buffer struct to keep track of individual buffers
-        // Use the Span to setup text on the frame
-        let lines: Vec<Line> = self
-            .buffer
-            .iter()
-            .map(|line| Line::from(line.to_owned()))
-            .collect();
+        let buffer_id = self.window.get_buffer_id();
 
-        let line = Text::from(lines);
+        let buffer = self.buffers.iter().find(|x| x.id == buffer_id);
 
-        f.render_widget(line, area);
+        if let Some(buffer) = buffer {
+            let lines: Vec<Line> = buffer
+                .content
+                .iter()
+                .map(|line| Line::from(line.clone()))
+                .collect();
+
+            f.render_widget(Text::from(lines), area);
+
+            return Ok(());
+        }
+
+        let rects = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints(vec![
+                Constraint::Length(1), // first row
+                Constraint::Min(0),
+            ])
+            .split(area);
+        let rect = rects[0];
+
+        let block = Block::default()
+            .title(block::Title::from(version().dim()).alignment(Alignment::Center));
+        f.render_widget(block, rect);
+
         Ok(())
     }
 }

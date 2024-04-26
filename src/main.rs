@@ -3,20 +3,22 @@
 #![allow(unused_variables)]
 
 pub mod action;
-pub mod app;
+mod buffer;
 pub mod cli;
 pub mod components;
 pub mod config;
+pub mod editor;
 pub mod mode;
 pub mod tui;
 pub mod utils;
+mod window;
 
 use clap::Parser;
 use cli::Cli;
 use color_eyre::eyre::Result;
 
 use crate::{
-    app::App,
+    editor::Editor,
     utils::{initialize_logging, initialize_panic_handler, version},
 };
 
@@ -27,7 +29,7 @@ async fn tokio_main() -> Result<()> {
 
     let args = Cli::parse();
 
-    let mut app = App::new(args.file_paths)?;
+    let mut app = Editor::new(args.files)?;
     app.run().await?;
 
     Ok(())
