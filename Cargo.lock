@@ -1743,38 +1743,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "ratatui-hello-world"
-version = "0.1.0"
-dependencies = [
- "better-panic",
- "clap",
- "color-eyre",
- "config",
- "crossterm",
- "derive_deref",
- "directories",
- "futures",
- "human-panic",
- "json5",
- "lazy_static",
- "libc",
- "log",
- "pretty_assertions",
- "ratatui",
- "serde",
- "serde_json",
- "signal-hook",
- "strip-ansi-escapes",
- "strum",
- "tokio",
- "tokio-util",
- "tracing",
- "tracing-error",
- "tracing-subscriber",
- "vergen",
-]
-
-[[package]]
 name = "redox_syscall"
 version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1858,6 +1826,38 @@ checksum = "7e2a3bcec1f113553ef1c88aae6c020a369d03d55b58de9869a0908930385091"
 dependencies = [
  "cfg-if",
  "ordered-multimap",
+]
+
+[[package]]
+name = "rust-text-editor"
+version = "0.1.0"
+dependencies = [
+ "better-panic",
+ "clap",
+ "color-eyre",
+ "config",
+ "crossterm",
+ "derive_deref",
+ "directories",
+ "futures",
+ "human-panic",
+ "json5",
+ "lazy_static",
+ "libc",
+ "log",
+ "pretty_assertions",
+ "ratatui",
+ "serde",
+ "serde_json",
+ "signal-hook",
+ "strip-ansi-escapes",
+ "strum",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "tracing-error",
+ "tracing-subscriber",
+ "vergen",
 ]
 
 [[package]]

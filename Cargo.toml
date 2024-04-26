@@ -1,5 +1,5 @@
 [package]
-name = "ratatui-hello-world"
+name = "rust-text-editor"
 version = "0.1.0"
 edition = "2021"
 description = "desc"
