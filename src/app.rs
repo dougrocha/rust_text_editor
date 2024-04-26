@@ -8,7 +8,7 @@ use tokio::sync::mpsc;
 
 use crate::{
     action::Action,
-    components::{fps::FpsCounter, window::Window, Component},
+    components::{editor::Editor, fps::FpsCounter, Component},
     config::Config,
     mode::Mode,
     tui,
@@ -31,14 +31,14 @@ impl App {
         let frame_rate = 60.0;
 
         let fps = FpsCounter::default();
-        let window = Window::new(file_paths);
+        let editor = Editor::new(file_paths);
 
         let config = Config::new()?;
         let mode = Mode::Home;
         Ok(Self {
             tick_rate,
             frame_rate,
-            components: vec![Box::new(fps), Box::new(window)],
+            components: vec![Box::new(fps), Box::new(editor)],
             should_quit: false,
             should_suspend: false,
             config,

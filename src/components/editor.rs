@@ -10,13 +10,13 @@ use super::{Component, Frame};
 use crate::{action::Action, config::Config};
 
 #[derive(Default)]
-pub struct Window {
+pub struct Editor {
     config: Config,
     command_tx: Option<UnboundedSender<Action>>,
     buffer: Vec<String>,
 }
 
-impl Window {
+impl Editor {
     pub fn new(file_paths: Option<Vec<PathBuf>>) -> Self {
         let buffer = fs::read_to_string(file_paths.unwrap().first().unwrap()).unwrap();
         let buffer = buffer.lines().map(|line| line.into()).collect();
@@ -28,7 +28,7 @@ impl Window {
     }
 }
 
-impl Component for Window {
+impl Component for Editor {
     fn register_action_handler(&mut self, tx: UnboundedSender<Action>) -> Result<()> {
         self.command_tx = Some(tx);
         Ok(())
