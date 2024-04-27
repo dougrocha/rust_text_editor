@@ -6,5 +6,5 @@ pub enum Mode {
     Normal,
     Insert,
     Visual,
-    VisualLine,
+    Search,
 }

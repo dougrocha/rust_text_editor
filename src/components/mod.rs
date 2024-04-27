@@ -6,6 +6,7 @@ use tokio::sync::mpsc::UnboundedSender;
 use crate::{
     action::Action,
     config::Config,
+    editor::Context,
     tui::{Event, Frame},
 };
 
@@ -51,7 +52,8 @@ pub trait Component {
     /// # Returns
     ///
     /// * `Result<()>` - An Ok result or an error.
-    fn init(&mut self, area: Rect) -> Result<()> {
+    #[allow(unused_variables)]
+    fn init(&mut self, context: Context, area: Rect) -> Result<()> {
         Ok(())
     }
     /// Handle incoming events and produce actions if necessary.
@@ -63,6 +65,7 @@ pub trait Component {
     /// # Returns
     ///
     /// * `Result<Option<Action>>` - An action to be processed or none.
+    #[allow(unused_variables)]
     fn handle_events(&mut self, event: Option<Event>) -> Result<Option<Action>> {
         let r = match event {
             Some(Event::Key(key_event)) => self.handle_key_events(key_event)?,

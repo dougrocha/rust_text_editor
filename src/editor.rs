@@ -18,10 +18,16 @@ use crate::{
     tui,
 };
 
+#[derive(Clone)]
+pub struct Context {
+    pub file_paths: Vec<PathBuf>,
+}
+
 pub struct Editor {
     tick_rate: f64,
     frame_rate: f64,
 
+    pub context: Context,
     pub config: Config,
     pub components: Vec<Box<dyn Component>>,
     pub should_quit: bool,
@@ -37,15 +43,17 @@ impl Editor {
         let frame_rate = 60.0;
 
         let fps = FpsCounter::default();
-        let editor_view = EditorView::new(file_paths);
+        let editor_view = EditorView::new();
 
         let config = Config::new()?;
-
         let mode = Mode::Normal;
+
+        let context = Context { file_paths };
 
         Ok(Self {
             tick_rate,
             frame_rate,
+            context,
             components: vec![Box::new(fps), Box::new(editor_view)],
             should_quit: false,
             should_suspend: false,
@@ -71,7 +79,7 @@ impl Editor {
         }
 
         for component in self.components.iter_mut() {
-            component.init(tui.size()?)?;
+            component.init(self.context.clone(), tui.size()?)?;
         }
 
         loop {
