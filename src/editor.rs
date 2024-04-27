@@ -43,7 +43,7 @@ impl Editor {
         let frame_rate = 60.0;
 
         let fps = FpsCounter::default();
-        let editor_view = EditorView::new();
+        let editor_view = EditorView::default();
 
         let config = Config::new()?;
         let mode = Mode::Normal;

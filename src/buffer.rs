@@ -61,15 +61,13 @@ impl Buffers {
         self.buffers.iter_mut().find(|buf| buf.id == buffer_id)
     }
 
-    pub fn handle_events(&mut self, action: BuffersAction) -> Result<Option<Action>> {
+    pub fn handle_events(&mut self, action: BuffersAction) {
         match self.get_mut(action.buffer_id) {
             Some(buffer) => {
                 buffer.handle_event(action.inner_action);
             }
-            None => {}
+            None => todo!(),
         }
-
-        Ok(None)
     }
 }
 
@@ -94,7 +92,12 @@ impl Buffer {
                     cursor: Position::new(0, 0),
                 }
             }
-            None => Self::default(),
+            None => Self {
+                id,
+                file_path: None,
+                content: vec![],
+                cursor: Position::new(0, 0),
+            },
         }
     }
 

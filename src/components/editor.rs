@@ -8,8 +8,8 @@ use tokio::sync::mpsc::UnboundedSender;
 
 use super::{Component, Frame};
 use crate::{
-    action::Action, buffer::Buffers, components::Action::Buffer, config::Config, mode::Mode,
-    utils::version, window::Windows,
+    action::Action, buffer::Buffers, components::Action::Buffer, config::Config, editor::Context,
+    mode::Mode, utils::version, window::Windows,
 };
 
 pub struct Editor {
@@ -18,21 +18,23 @@ pub struct Editor {
 
     buffers: Buffers,
     windows: Windows,
+    context: Option<Context>,
 }
 
-impl Editor {
-    pub fn new() -> Self {
+impl Default for Editor {
+    fn default() -> Self {
         Self {
             config: Config::default(),
             command_tx: None,
             buffers: Buffers::new(),
             windows: Windows::new(),
+            context: None,
         }
     }
 }
 
 impl Component for Editor {
-    fn init(&mut self, context: crate::editor::Context, area: Rect) -> Result<()> {
+    fn init(&mut self, context: Context, area: Rect) -> Result<()> {
         for file_path in context.file_paths {
             let buffer_id = self.buffers.add(file_path);
             self.windows.add(buffer_id);
@@ -61,7 +63,7 @@ impl Component for Editor {
         match action {
             Action::Tick => {}
             Buffer(action) => {
-                self.buffers.handle_events(action)?;
+                self.buffers.handle_events(action);
             }
             _ => {}
         }
