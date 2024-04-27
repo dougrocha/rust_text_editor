@@ -1,19 +1,38 @@
 use color_eyre::eyre::Result;
 use ratatui::layout::{Position, Rect};
 
-use crate::tui;
+use crate::{action::Action, buffer::BufferId, tui};
+
+#[derive(Default)]
+pub struct Windows {
+    pub nodes: Vec<Window>,
+    focused_node: usize,
+}
+
+impl Windows {
+    pub fn add(&mut self, buffer_id: BufferId) {
+        self.nodes.push(Window::new(self.nodes.len(), buffer_id));
+    }
+
+    pub fn get_focused(&self) -> Option<&Window> {
+        self.nodes.get(self.focused_node)
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.nodes.is_empty()
+    }
+}
 
 #[derive(Default)]
 pub struct Window {
-    id: usize,
-    buffer_id: usize,
+    pub id: usize,
+    pub buffer_id: BufferId,
 
-    offset: Position,
-    cursor: Position,
+    pub cursor: Position,
 }
 
 impl Window {
-    pub fn new(id: usize, buffer_id: usize) -> Self {
+    pub fn new(id: usize, buffer_id: BufferId) -> Self {
         Self {
             id,
             buffer_id,
@@ -21,15 +40,7 @@ impl Window {
         }
     }
 
-    pub fn get_id(&self) -> usize {
-        self.id
-    }
-
-    pub fn get_buffer_id(&self) -> usize {
-        self.buffer_id
-    }
-
-    pub fn draw(&mut self, f: &mut tui::Frame<'_>, area: Rect) -> Result<()> {
-        Ok(())
+    pub fn move_right(&mut self) {
+        self.cursor.x += 1;
     }
 }

@@ -6,6 +6,8 @@ use serde::{
 };
 use strum::Display;
 
+use crate::buffer::BuffersAction;
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Display, Deserialize)]
 pub enum Action {
     Tick,
@@ -18,8 +20,5 @@ pub enum Action {
     Error(String),
     Help,
 
-    MoveLeft,
-    MoveRight,
-    MoveUp,
-    MoveDown,
+    Buffer(BuffersAction),
 }
