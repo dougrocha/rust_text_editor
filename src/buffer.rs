@@ -1,7 +1,7 @@
 use std::{fs, path::PathBuf};
 
 use color_eyre::eyre::Result;
-use ratatui::layout::Rect;
+use ratatui::layout::{Position, Rect};
 use serde::{Deserialize, Serialize};
 use strum::Display;
 
@@ -24,7 +24,7 @@ impl From<BuffersAction> for Action {
     }
 }
 
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BufferId(usize);
 
 impl BufferId {
@@ -33,13 +33,19 @@ impl BufferId {
     }
 }
 
-#[derive(Default)]
 pub struct Buffers {
     pub buffers: Vec<Buffer>,
     pub next_buffer_id: usize,
 }
 
 impl Buffers {
+    pub fn new() -> Self {
+        Self {
+            buffers: vec![],
+            next_buffer_id: 0,
+        }
+    }
+
     pub fn add(&mut self, file_path: PathBuf) -> BufferId {
         let buffer_id = BufferId(self.next_buffer_id);
         self.next_buffer_id += 1;
@@ -67,11 +73,11 @@ impl Buffers {
     }
 }
 
-#[derive(Default)]
 pub struct Buffer {
     pub id: BufferId,
     pub content: Vec<String>,
     pub file_path: Option<PathBuf>,
+    pub cursor: Position,
 }
 
 impl Buffer {
@@ -85,6 +91,7 @@ impl Buffer {
                     id,
                     file_path: Some(file_path.to_path_buf()),
                     content,
+                    cursor: Position::new(0, 0),
                 }
             }
             None => Self::default(),

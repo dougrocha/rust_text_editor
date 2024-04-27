@@ -12,7 +12,6 @@ use crate::{
     utils::version, window::Windows,
 };
 
-#[derive(Default)]
 pub struct Editor {
     config: Config,
     command_tx: Option<UnboundedSender<Action>>,
@@ -23,7 +22,12 @@ pub struct Editor {
 
 impl Editor {
     pub fn new() -> Self {
-        Self::default()
+        Self {
+            config: Config::default(),
+            command_tx: None,
+            buffers: Buffers::new(),
+            windows: Windows::new(),
+        }
     }
 }
 
@@ -66,22 +70,17 @@ impl Component for Editor {
 
     fn draw(&mut self, f: &mut Frame<'_>, area: Rect) -> Result<()> {
         if self.windows.is_empty() {
-            let rects = Layout::default()
-                .direction(Direction::Vertical)
-                .constraints(vec![
-                    Constraint::Length(1), // first row
-                    Constraint::Min(0),
-                ])
-                .split(area);
-            let rect = rects[0];
+            let version = version();
 
-            let block = Block::default()
-                .title(block::Title::from(version().dim()).alignment(Alignment::Center));
-            f.render_widget(block, rect);
+            let lines: Vec<Line> = version.lines().map(Line::from).collect();
+
+            f.render_widget(Text::from(lines), area);
         } else {
             for window in &self.windows.nodes {
                 let buffer_id = window.buffer_id;
+
                 let buffer = self.buffers.get(buffer_id);
+
                 if let Some(buffer) = buffer {
                     let lines: Vec<Line> = buffer
                         .content
@@ -91,7 +90,7 @@ impl Component for Editor {
 
                     f.render_widget(Text::from(lines), area);
 
-                    f.set_cursor(window.cursor.x, window.cursor.y);
+                    f.set_cursor(buffer.cursor.x, buffer.cursor.y);
                 }
             }
         }
