@@ -1,7 +1,11 @@
 use color_eyre::eyre::Result;
 use ratatui::layout::{Position, Rect};
 
-use crate::{action::Action, buffer::BufferId, tui};
+use crate::{
+    action::Action,
+    buffer::{BufferAction, BufferId},
+    tui,
+};
 
 pub struct Windows {
     pub nodes: Vec<Window>,
@@ -15,8 +19,16 @@ impl Windows {
             focused_node: 0,
         }
     }
-    pub fn add(&mut self, buffer_id: BufferId) {
-        self.nodes.push(Window::new(self.nodes.len(), buffer_id));
+    pub fn add(&mut self, id: VisibleBufferId) {
+        self.nodes.push(Window::new(id));
+    }
+
+    pub fn focus(&mut self, id: VisibleBufferId) {
+        for (idx, node) in self.nodes.iter().enumerate() {
+            if node.id == id {
+                self.focused_node = idx;
+            }
+        }
     }
 
     pub fn get_focused(&self) -> Option<&Window> {
@@ -29,12 +41,29 @@ impl Windows {
 }
 
 pub struct Window {
-    pub id: usize,
-    pub buffer_id: BufferId,
+    pub id: VisibleBufferId,
 }
 
 impl Window {
-    pub fn new(id: usize, buffer_id: BufferId) -> Self {
-        Self { id, buffer_id }
+    pub fn new(id: VisibleBufferId) -> Self {
+        Self { id }
+    }
+}
+
+#[derive(Default, Clone, Copy, PartialEq, Eq)]
+pub struct CursorId(pub usize);
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub struct VisibleBufferId {
+    pub buffer_id: BufferId,
+    pub cursor_id: CursorId,
+}
+
+impl VisibleBufferId {
+    pub fn new(buffer_id: BufferId, cursor_id: CursorId) -> Self {
+        Self {
+            buffer_id,
+            cursor_id,
+        }
     }
 }

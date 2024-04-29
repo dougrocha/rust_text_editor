@@ -1,86 +1,65 @@
 use std::path::PathBuf;
 
 use color_eyre::eyre::Result;
-use crossterm::event::KeyEvent;
+use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
-    layout::Rect,
-    text::{Line, Text},
+    layout::{Constraint, Direction, Layout, Position, Rect},
+    style::{Color, Style, Stylize},
+    text::{Line, Span, Text},
     widgets::Paragraph,
 };
 use serde::{Deserialize, Serialize};
-use tokio::sync::mpsc;
+use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
 
 use crate::{
     action::Action,
-    components::{editor::Editor as EditorView, fps::FpsCounter, Component},
+    buffer::Buffers,
+    components::Component,
     config::Config,
     mode::Mode,
     tui,
+    utils::version,
+    window::{CursorId, VisibleBufferId, Windows},
 };
 
 #[derive(Clone)]
 pub struct Context {
+    pub action_tx: Option<UnboundedSender<Action>>,
     pub file_paths: Vec<PathBuf>,
+    pub config: Config,
 }
 
 pub struct Editor {
-    tick_rate: f64,
-    frame_rate: f64,
-
-    pub context: Context,
-    pub config: Config,
-    pub components: Vec<Box<dyn Component>>,
-    pub should_quit: bool,
-    pub should_suspend: bool,
-
-    pub mode: Mode,
-    pub last_tick_key_events: Vec<KeyEvent>,
+    context: Context,
+    should_quit: bool,
+    buffers: Buffers,
+    windows: Windows,
 }
 
 impl Editor {
     pub fn new(file_paths: Vec<PathBuf>) -> Result<Self> {
-        let tick_rate = 4.0;
-        let frame_rate = 60.0;
-
-        let fps = FpsCounter::default();
-        let editor_view = EditorView::default();
-
-        let config = Config::new()?;
-        let mode = Mode::Normal;
-
-        let context = Context { file_paths };
+        let context = Context {
+            action_tx: None,
+            config: Config::new()?,
+            file_paths,
+        };
 
         Ok(Self {
-            tick_rate,
-            frame_rate,
             context,
-            components: vec![Box::new(fps), Box::new(editor_view)],
             should_quit: false,
-            should_suspend: false,
-            config,
-            mode,
-            last_tick_key_events: Vec::new(),
+            buffers: Buffers::new(),
+            windows: Windows::new(),
         })
     }
 
     pub async fn run(&mut self) -> Result<()> {
         let (action_tx, mut action_rx) = mpsc::unbounded_channel();
 
-        let mut tui = tui::Tui::new()?.tick_rate(4.0).frame_rate(60.0);
+        let mut tui = tui::Tui::new()?;
         // tui.mouse(true);
         tui.enter()?;
 
-        for component in self.components.iter_mut() {
-            component.register_action_handler(action_tx.clone())?;
-        }
-
-        for component in self.components.iter_mut() {
-            component.register_config_handler(self.config.clone())?;
-        }
-
-        for component in self.components.iter_mut() {
-            component.init(self.context.clone(), tui.size()?)?;
-        }
+        self.init(tui.size()?, action_tx.clone())?;
 
         loop {
             if let Some(e) = tui.next().await {
@@ -89,31 +68,15 @@ impl Editor {
                     tui::Event::Tick => action_tx.send(Action::Tick)?,
                     tui::Event::Render => action_tx.send(Action::Render)?,
                     tui::Event::Resize(x, y) => action_tx.send(Action::Resize(x, y))?,
-                    tui::Event::Key(key) => {
-                        if let Some(keymap) = self.config.keybindings.get(&self.mode) {
-                            if let Some(action) = keymap.get(&vec![key]) {
-                                log::info!("Got action: {action:?}");
-                                action_tx.send(action.clone())?;
-                            } else {
-                                // If the key was not handled as a single key action,
-                                // then consider it for multi-key combinations.
-                                self.last_tick_key_events.push(key);
-
-                                // Check for multi-key combinations
-                                if let Some(action) = keymap.get(&self.last_tick_key_events) {
-                                    log::info!("Got action: {action:?}");
-                                    action_tx.send(action.clone())?;
-                                }
-                            }
-                        };
+                    tui::Event::Key(key) if key.code == KeyCode::Char('q') => {
+                        action_tx.send(Action::Quit)?;
                     }
                     _ => {}
                 }
-                for component in self.components.iter_mut() {
-                    if let Some(action) = component.handle_events(Some(e.clone()))? {
-                        action_tx.send(action)?;
-                    }
-                }
+
+                if let Some(action) = self.handle_events(Some(e.clone()))? {
+                    action_tx.send(action)?
+                };
             }
 
             while let Ok(action) = action_rx.try_recv() {
@@ -121,59 +84,141 @@ impl Editor {
                     log::debug!("{action:?}");
                 }
                 match action {
-                    Action::Tick => {
-                        self.last_tick_key_events.drain(..);
-                    }
                     Action::Quit => self.should_quit = true,
-                    Action::Suspend => self.should_suspend = true,
-                    Action::Resume => self.should_suspend = false,
                     Action::Resize(w, h) => {
                         tui.resize(Rect::new(0, 0, w, h))?;
                         tui.draw(|f| {
-                            for component in self.components.iter_mut() {
-                                let r = component.draw(f, f.size());
-                                if let Err(e) = r {
-                                    action_tx
-                                        .send(Action::Error(format!("Failed to draw: {:?}", e)))
-                                        .unwrap();
-                                }
+                            let r = self.draw(f, f.size());
+                            if let Err(e) = r {
+                                action_tx
+                                    .send(Action::Error(format!("Failed to draw: {:?}", e)))
+                                    .unwrap();
                             }
                         })?;
                     }
                     Action::Render => {
                         tui.draw(|f| {
-                            for component in self.components.iter_mut() {
-                                let r = component.draw(f, f.size());
-                                if let Err(e) = r {
-                                    action_tx
-                                        .send(Action::Error(format!("Failed to draw: {:?}", e)))
-                                        .unwrap();
-                                }
+                            let r = self.draw(f, f.size());
+                            if let Err(e) = r {
+                                action_tx
+                                    .send(Action::Error(format!("Failed to draw: {:?}", e)))
+                                    .unwrap();
                             }
                         })?;
                     }
                     _ => {}
                 }
-                for component in self.components.iter_mut() {
-                    if let Some(action) = component.update(action.clone())? {
-                        action_tx.send(action)?
-                    };
-                }
+
+                if let Some(action) = self.update(action.clone())? {
+                    action_tx.send(action)?
+                };
             }
-            if self.should_suspend {
-                tui.suspend()?;
-                action_tx.send(Action::Resume)?;
-                tui = tui::Tui::new()?
-                    .tick_rate(self.tick_rate)
-                    .frame_rate(self.frame_rate);
-                // tui.mouse(true);
-                tui.enter()?;
-            } else if self.should_quit {
+
+            if self.should_quit {
                 tui.stop()?;
                 break;
             }
         }
         tui.exit()?;
+        Ok(())
+    }
+}
+
+impl Component for Editor {
+    fn init(&mut self, area: Rect, action_tx: UnboundedSender<Action>) -> Result<()> {
+        for (index, file_path) in self.context.file_paths.iter().cloned().enumerate() {
+            action_tx.send(Action::OpenFile(file_path))?;
+        }
+
+        Ok(())
+    }
+
+    fn handle_key_events(&mut self, key: KeyEvent) -> Result<Option<Action>> {
+        Ok(None)
+    }
+
+    fn update(&mut self, action: Action) -> Result<Option<Action>> {
+        match action {
+            Action::OpenFile(file_path) => {
+                if let Some(buffer_id) = self.buffers.find_by_file_path(&file_path) {
+                    let visible_buffer_id = VisibleBufferId::new(buffer_id, CursorId::default());
+
+                    self.windows.add(visible_buffer_id);
+                    self.windows.focus(visible_buffer_id);
+                } else {
+                    // check if buffer already exists
+                    let buffer_id = self.buffers.add(Some(file_path));
+                    let visible_buffer_id = VisibleBufferId::new(buffer_id, CursorId::default());
+
+                    self.windows.add(visible_buffer_id);
+                    self.windows.focus(visible_buffer_id);
+                }
+            }
+            Action::Buffer(buffer_action) => {
+                self.buffers.handle_actions(buffer_action);
+            }
+            _ => {}
+        }
+
+        Ok(None)
+    }
+
+    fn draw(&mut self, f: &mut tui::Frame<'_>, area: Rect) -> Result<()> {
+        if self.windows.is_empty() {
+            let version = version();
+
+            let lines: Vec<Line> = version.lines().map(Line::from).collect();
+
+            f.render_widget(Text::from(lines), area);
+        } else {
+            for window in &self.windows.nodes {
+                let visible_buffer_id = window.id;
+                let buffer_id = visible_buffer_id.buffer_id;
+
+                let buffer = self.buffers.get(buffer_id);
+
+                if let Some(buffer) = buffer {
+                    let buffer_layout = Layout::default()
+                        .direction(Direction::Vertical)
+                        .constraints(vec![Constraint::Percentage(100), Constraint::Length(1)])
+                        .split(area);
+
+                    let lines: Vec<Line> = buffer
+                        .content
+                        .iter()
+                        .map(|line| Line::from(line.clone()))
+                        .collect();
+
+                    f.render_widget(Text::from(lines), buffer_layout[0]);
+
+                    let mode = Span::styled(
+                        " NORMAL ",
+                        Style::default().bg(Color::Blue).fg(Color::Black),
+                    );
+
+                    let file_name = Span::styled(
+                        format!(
+                            " {} ",
+                            buffer
+                                .file_path
+                                .as_ref()
+                                .unwrap()
+                                .to_str()
+                                .unwrap_or("None")
+                        ),
+                        Style::default().fg(Color::Gray),
+                    );
+                    let status_line = Line::from(vec![mode, file_name]).bg(Color::DarkGray);
+
+                    f.render_widget(status_line, buffer_layout[1]);
+
+                    let cursor = buffer.get_cursor(visible_buffer_id.cursor_id);
+
+                    f.set_cursor(cursor.x, cursor.y);
+                }
+            }
+        }
+
         Ok(())
     }
 }

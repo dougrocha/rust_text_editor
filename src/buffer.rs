@@ -5,17 +5,29 @@ use ratatui::layout::{Position, Rect};
 use serde::{Deserialize, Serialize};
 use strum::Display;
 
-use crate::action::Action;
+use crate::{action::Action, window::CursorId};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BuffersAction {
-    buffer_id: BufferId,
-    inner_action: BufferAction,
+    pub buffer_id: BufferId,
+    pub inner_action: BufferAction,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Display, Deserialize)]
 pub enum BufferAction {
-    MoveRight,
+    Save,
+    CursorAction {
+        cursor_id: usize,
+        action: CursorAction,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Display, Deserialize)]
+pub enum CursorAction {
+    Up(usize),
+    Down(usize),
+    Left(usize),
+    Right(usize),
 }
 
 impl From<BuffersAction> for Action {
@@ -46,11 +58,23 @@ impl Buffers {
         }
     }
 
-    pub fn add(&mut self, file_path: PathBuf) -> BufferId {
+    pub fn add(&mut self, file_path: Option<PathBuf>) -> BufferId {
         let buffer_id = BufferId(self.next_buffer_id);
         self.next_buffer_id += 1;
-        self.buffers.push(Buffer::new(buffer_id, Some(file_path)));
+        self.buffers.push(Buffer::new(buffer_id, file_path));
         buffer_id
+    }
+
+    pub fn find_by_file_path(&self, file_path: &PathBuf) -> Option<BufferId> {
+        self.buffers
+            .iter()
+            .find(|b| {
+                if let Some(buf_path) = b.file_path.as_ref() {
+                    return buf_path == file_path;
+                }
+                false
+            })
+            .map(|b| b.id)
     }
 
     pub fn get(&self, buffer_id: BufferId) -> Option<&Buffer> {
@@ -61,10 +85,10 @@ impl Buffers {
         self.buffers.iter_mut().find(|buf| buf.id == buffer_id)
     }
 
-    pub fn handle_events(&mut self, action: BuffersAction) {
+    pub fn handle_actions(&mut self, action: BuffersAction) {
         match self.get_mut(action.buffer_id) {
             Some(buffer) => {
-                buffer.handle_event(action.inner_action);
+                buffer.handle_action(action.inner_action);
             }
             None => todo!(),
         }
@@ -75,7 +99,7 @@ pub struct Buffer {
     pub id: BufferId,
     pub content: Vec<String>,
     pub file_path: Option<PathBuf>,
-    pub cursor: Position,
+    pub cursors: Vec<Position>,
 }
 
 impl Buffer {
@@ -89,14 +113,14 @@ impl Buffer {
                     id,
                     file_path: Some(file_path.to_path_buf()),
                     content,
-                    cursor: Position::new(0, 0),
+                    cursors: vec![Position::default()],
                 }
             }
             None => Self {
                 id,
                 file_path: None,
                 content: vec![],
-                cursor: Position::new(0, 0),
+                cursors: vec![Position::default()],
             },
         }
     }
@@ -109,9 +133,17 @@ impl Buffer {
         self.content.get_mut(index)
     }
 
-    pub fn handle_event(&mut self, action: BufferAction) {
+    pub fn get_cursor(&self, cursor_id: CursorId) -> &Position {
+        &self.cursors[cursor_id.0]
+    }
+
+    pub fn handle_action(&mut self, action: BufferAction) {
         match action {
-            _ => todo!(),
+            BufferAction::Save => {}
+            BufferAction::CursorAction { cursor_id, action } => {
+                // handle the cursor
+            }
+            _ => {}
         }
     }
 }

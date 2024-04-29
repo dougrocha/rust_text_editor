@@ -1,9 +1,10 @@
-use std::{fmt, string::ToString};
+use std::{fmt, path::PathBuf, string::ToString};
 
 use serde::{
     de::{self, Deserializer, Visitor},
     Deserialize, Serialize,
 };
+use serde_json::Value;
 use strum::Display;
 
 use crate::buffer::BuffersAction;
@@ -20,5 +21,9 @@ pub enum Action {
     Error(String),
     Help,
 
+    // Window Action
+    OpenFile(PathBuf),
+
+    // Buffer Actions
     Buffer(BuffersAction),
 }

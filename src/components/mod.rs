@@ -10,9 +10,6 @@ use crate::{
     tui::{Event, Frame},
 };
 
-pub mod editor;
-pub mod fps;
-
 /// `Component` is a trait that represents a visual and interactive element of the user interface.
 /// Implementors of this trait can be registered with the main application loop and will be able to receive events,
 /// update state, and be rendered on the screen.
@@ -40,7 +37,7 @@ pub trait Component {
     ///
     /// * `Result<()>` - An Ok result or an error.
     #[allow(unused_variables)]
-    fn register_config_handler(&mut self, config: Config) -> Result<()> {
+    fn register_context_handler(&mut self, context: Context) -> Result<()> {
         Ok(())
     }
     /// Initialize the component with a specified area if necessary.
@@ -53,7 +50,7 @@ pub trait Component {
     ///
     /// * `Result<()>` - An Ok result or an error.
     #[allow(unused_variables)]
-    fn init(&mut self, context: Context, area: Rect) -> Result<()> {
+    fn init(&mut self, area: Rect, action_tx: UnboundedSender<Action>) -> Result<()> {
         Ok(())
     }
     /// Handle incoming events and produce actions if necessary.
@@ -123,5 +120,8 @@ pub trait Component {
     /// # Returns
     ///
     /// * `Result<()>` - An Ok result or an error.
-    fn draw(&mut self, f: &mut Frame<'_>, area: Rect) -> Result<()>;
+    #[allow(unused_variables)]
+    fn draw(&mut self, f: &mut Frame<'_>, area: Rect) -> Result<()> {
+        Ok(())
+    }
 }
