@@ -2,27 +2,25 @@ use std::{fs, path::PathBuf};
 
 use color_eyre::eyre::Result;
 use ratatui::layout::{Position, Rect};
-use serde::{Deserialize, Serialize};
-use strum::Display;
 
-use crate::{action::Action, window::CursorId};
+use crate::{action::Action, components::Component, tui::Frame, window::CursorId};
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BuffersAction {
     pub buffer_id: BufferId,
     pub inner_action: BufferAction,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Display, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BufferAction {
     Save,
     CursorAction {
-        cursor_id: usize,
+        cursor_id: CursorId,
         action: CursorAction,
     },
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Display, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CursorAction {
     Up(usize),
     Down(usize),
@@ -36,7 +34,7 @@ impl From<BuffersAction> for Action {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BufferId(usize);
 
 impl BufferId {
@@ -45,6 +43,7 @@ impl BufferId {
     }
 }
 
+#[derive(Default)]
 pub struct Buffers {
     pub buffers: Vec<Buffer>,
     pub next_buffer_id: usize,
@@ -66,8 +65,7 @@ impl Buffers {
     }
 
     pub fn find_by_file_path(&self, file_path: &PathBuf) -> Option<BufferId> {
-        self.buffers
-            .iter()
+        self.iter()
             .find(|b| {
                 if let Some(buf_path) = b.file_path.as_ref() {
                     return buf_path == file_path;
@@ -78,11 +76,19 @@ impl Buffers {
     }
 
     pub fn get(&self, buffer_id: BufferId) -> Option<&Buffer> {
-        self.buffers.iter().find(|buf| buf.id == buffer_id)
+        self.iter().find(|buf| buf.id == buffer_id)
     }
 
     pub fn get_mut(&mut self, buffer_id: BufferId) -> Option<&mut Buffer> {
-        self.buffers.iter_mut().find(|buf| buf.id == buffer_id)
+        self.iter_mut().find(|buf| buf.id == buffer_id)
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = &Buffer> {
+        self.buffers.iter()
+    }
+
+    pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut Buffer> {
+        self.buffers.iter_mut()
     }
 
     pub fn handle_actions(&mut self, action: BuffersAction) {
@@ -137,13 +143,36 @@ impl Buffer {
         &self.cursors[cursor_id.0]
     }
 
+    pub fn get_cursor_mut(&mut self, cursor_id: CursorId) -> &mut Position {
+        &mut self.cursors[cursor_id.0]
+    }
+
     pub fn handle_action(&mut self, action: BufferAction) {
         match action {
             BufferAction::Save => {}
             BufferAction::CursorAction { cursor_id, action } => {
-                // handle the cursor
+                self.handle_cursor_action(cursor_id, action);
+            }
+        }
+    }
+
+    pub fn handle_cursor_action(&mut self, cursor_id: CursorId, action: CursorAction) {
+        match action {
+            CursorAction::Up(n) => {
+                let cursor = self.get_cursor_mut(cursor_id);
+                cursor.y -= n as u16;
+            }
+            CursorAction::Down(n) => {
+                let cursor = self.get_cursor_mut(cursor_id);
+                cursor.y += n as u16;
             }
             _ => {}
         }
+    }
+}
+
+impl Component for Buffer {
+    fn draw(&mut self, f: &mut Frame<'_>, area: Rect) -> Result<()> {
+        Ok(())
     }
 }

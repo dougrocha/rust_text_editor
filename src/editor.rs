@@ -3,17 +3,15 @@ use std::path::PathBuf;
 use color_eyre::eyre::Result;
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
-    layout::{Constraint, Direction, Layout, Position, Rect},
+    layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Style, Stylize},
     text::{Line, Span, Text},
-    widgets::Paragraph,
 };
-use serde::{Deserialize, Serialize};
-use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
+use tokio::sync::mpsc::{self, UnboundedSender};
 
 use crate::{
     action::Action,
-    buffer::Buffers,
+    buffer::{BufferAction, Buffers, BuffersAction, CursorAction},
     components::Component,
     config::Config,
     mode::Mode,
@@ -31,6 +29,7 @@ pub struct Context {
 
 pub struct Editor {
     context: Context,
+    mode: Mode,
     should_quit: bool,
     buffers: Buffers,
     windows: Windows,
@@ -46,6 +45,7 @@ impl Editor {
 
         Ok(Self {
             context,
+            mode: Mode::Normal,
             should_quit: false,
             buffers: Buffers::new(),
             windows: Windows::new(),
@@ -125,8 +125,8 @@ impl Editor {
 }
 
 impl Component for Editor {
-    fn init(&mut self, area: Rect, action_tx: UnboundedSender<Action>) -> Result<()> {
-        for (index, file_path) in self.context.file_paths.iter().cloned().enumerate() {
+    fn init(&mut self, _area: Rect, action_tx: UnboundedSender<Action>) -> Result<()> {
+        for file_path in self.context.file_paths.iter().cloned() {
             action_tx.send(Action::OpenFile(file_path))?;
         }
 
@@ -134,7 +134,33 @@ impl Component for Editor {
     }
 
     fn handle_key_events(&mut self, key: KeyEvent) -> Result<Option<Action>> {
-        Ok(None)
+        let event: Option<Action> = match key.code {
+            KeyCode::Up => {
+                let window = self.windows.get_focused().unwrap();
+
+                Some(Action::Buffer(BuffersAction {
+                    buffer_id: window.id.buffer_id,
+                    inner_action: BufferAction::CursorAction {
+                        cursor_id: window.id.cursor_id,
+                        action: CursorAction::Up(1),
+                    },
+                }))
+            }
+            KeyCode::Down => {
+                let window = self.windows.get_focused().unwrap();
+
+                Some(Action::Buffer(BuffersAction {
+                    buffer_id: window.id.buffer_id,
+                    inner_action: BufferAction::CursorAction {
+                        cursor_id: window.id.cursor_id,
+                        action: CursorAction::Down(1),
+                    },
+                }))
+            }
+            _ => None,
+        };
+
+        Ok(event)
     }
 
     fn update(&mut self, action: Action) -> Result<Option<Action>> {

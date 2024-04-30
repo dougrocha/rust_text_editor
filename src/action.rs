@@ -1,15 +1,8 @@
-use std::{fmt, path::PathBuf, string::ToString};
-
-use serde::{
-    de::{self, Deserializer, Visitor},
-    Deserialize, Serialize,
-};
-use serde_json::Value;
-use strum::Display;
+use std::path::PathBuf;
 
 use crate::buffer::BuffersAction;
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Display, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Action {
     Tick,
     Render,

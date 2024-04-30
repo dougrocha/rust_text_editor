@@ -1,12 +1,6 @@
-use color_eyre::eyre::Result;
-use ratatui::layout::{Position, Rect};
+use crate::buffer::BufferId;
 
-use crate::{
-    action::Action,
-    buffer::{BufferAction, BufferId},
-    tui,
-};
-
+#[derive(Default)]
 pub struct Windows {
     pub nodes: Vec<Window>,
     focused_node: usize,
@@ -50,10 +44,10 @@ impl Window {
     }
 }
 
-#[derive(Default, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct CursorId(pub usize);
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct VisibleBufferId {
     pub buffer_id: BufferId,
     pub cursor_id: CursorId,

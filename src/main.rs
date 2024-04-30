@@ -1,9 +1,5 @@
-#![allow(dead_code)]
-#![allow(unused_imports)]
-#![allow(unused_variables)]
-
 pub mod action;
-mod buffer;
+pub mod buffer;
 pub mod cli;
 pub mod components;
 pub mod config;
@@ -11,7 +7,7 @@ pub mod editor;
 pub mod mode;
 pub mod tui;
 pub mod utils;
-mod window;
+pub mod window;
 
 use clap::Parser;
 use cli::Cli;
@@ -19,7 +15,7 @@ use color_eyre::eyre::Result;
 
 use crate::{
     editor::Editor,
-    utils::{initialize_logging, initialize_panic_handler, version},
+    utils::{initialize_logging, initialize_panic_handler},
 };
 
 async fn tokio_main() -> Result<()> {
