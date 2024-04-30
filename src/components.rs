@@ -5,7 +5,6 @@ use tokio::sync::mpsc::UnboundedSender;
 
 use crate::{
     action::Action,
-    config::Config,
     editor::Context,
     tui::{Event, Frame},
 };
@@ -120,7 +119,6 @@ pub trait Component {
     /// # Returns
     ///
     /// * `Result<()>` - An Ok result or an error.
-    #[allow(unused_variables)]
     fn draw(&mut self, f: &mut Frame<'_>, area: Rect) -> Result<()> {
         Ok(())
     }
