@@ -3,7 +3,7 @@ use std::{fs, path::PathBuf};
 use color_eyre::eyre::Result;
 use ratatui::layout::{Position, Rect};
 
-use crate::{action::Action, components::Component, tui::Frame, window::CursorId};
+use crate::{action::Action, components::Component, editor::Context, tui::Frame, window::CursorId};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BuffersAction {
@@ -160,19 +160,55 @@ impl Buffer {
         match action {
             CursorAction::Up(n) => {
                 let cursor = self.get_cursor_mut(cursor_id);
-                cursor.y -= n as u16;
+                cursor.y = cursor.y.saturating_sub(n as u16);
             }
             CursorAction::Down(n) => {
                 let cursor = self.get_cursor_mut(cursor_id);
                 cursor.y += n as u16;
             }
-            _ => {}
+            CursorAction::Left(n) => {
+                let cursor = self.get_cursor_mut(cursor_id);
+                cursor.x = cursor.x.saturating_sub(n as u16);
+            }
+            CursorAction::Right(n) => {
+                let cursor = self.get_cursor_mut(cursor_id);
+                cursor.x += n as u16;
+            }
         }
     }
-}
 
-impl Component for Buffer {
-    fn draw(&mut self, f: &mut Frame<'_>, area: Rect) -> Result<()> {
+    pub fn draw(&self, f: &mut Frame<'_>, area: Rect, context: &Context) -> Result<()> {
+        use ratatui::prelude::*;
+
+        let buffer_layout = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints(vec![Constraint::Percentage(100), Constraint::Length(1)])
+            .split(area);
+
+        let lines: Vec<Line> = self
+            .content
+            .iter()
+            .map(|line| Line::from(line.clone()))
+            .collect();
+
+        f.render_widget(Text::from(lines), buffer_layout[0]);
+
+        let mode = Span::styled(
+            context.mode.to_string(),
+            Style::default().bg(Color::Blue).fg(Color::Black),
+        );
+
+        let file_name = Span::styled(
+            format!(
+                " {} ",
+                self.file_path.as_ref().unwrap().to_str().unwrap_or("None")
+            ),
+            Style::default().fg(Color::Gray),
+        );
+        let status_line = Line::from(vec![mode, file_name]).bg(Color::DarkGray);
+
+        f.render_widget(status_line, buffer_layout[1]);
+
         Ok(())
     }
 }

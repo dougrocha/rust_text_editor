@@ -18,9 +18,10 @@ impl Windows {
     }
 
     pub fn focus(&mut self, id: VisibleBufferId) {
-        for (idx, node) in self.nodes.iter().enumerate() {
+        for (idx, node) in self.nodes.iter_mut().enumerate() {
             if node.id == id {
                 self.focused_node = idx;
+                node.focused = true;
             }
         }
     }
@@ -36,11 +37,12 @@ impl Windows {
 
 pub struct Window {
     pub id: VisibleBufferId,
+    pub focused: bool,
 }
 
 impl Window {
     pub fn new(id: VisibleBufferId) -> Self {
-        Self { id }
+        Self { id, focused: false }
     }
 }
 

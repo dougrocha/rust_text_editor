@@ -3,9 +3,8 @@ use std::path::PathBuf;
 use color_eyre::eyre::Result;
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
-    layout::{Constraint, Direction, Layout, Rect},
-    style::{Color, Style, Stylize},
-    text::{Line, Span, Text},
+    layout::Rect,
+    text::{Line, Text},
 };
 use tokio::sync::mpsc::{self, UnboundedSender};
 
@@ -25,11 +24,11 @@ pub struct Context {
     pub action_tx: Option<UnboundedSender<Action>>,
     pub file_paths: Vec<PathBuf>,
     pub config: Config,
+    pub mode: Mode,
 }
 
 pub struct Editor {
     context: Context,
-    mode: Mode,
     should_quit: bool,
     buffers: Buffers,
     windows: Windows,
@@ -41,11 +40,11 @@ impl Editor {
             action_tx: None,
             config: Config::new()?,
             file_paths,
+            mode: Mode::Normal,
         };
 
         Ok(Self {
             context,
-            mode: Mode::Normal,
             should_quit: false,
             buffers: Buffers::new(),
             windows: Windows::new(),
@@ -137,7 +136,6 @@ impl Component for Editor {
         let event: Option<Action> = match key.code {
             KeyCode::Up => {
                 let window = self.windows.get_focused().unwrap();
-
                 Some(Action::Buffer(BuffersAction {
                     buffer_id: window.id.buffer_id,
                     inner_action: BufferAction::CursorAction {
@@ -148,12 +146,31 @@ impl Component for Editor {
             }
             KeyCode::Down => {
                 let window = self.windows.get_focused().unwrap();
-
                 Some(Action::Buffer(BuffersAction {
                     buffer_id: window.id.buffer_id,
                     inner_action: BufferAction::CursorAction {
                         cursor_id: window.id.cursor_id,
                         action: CursorAction::Down(1),
+                    },
+                }))
+            }
+            KeyCode::Left => {
+                let window = self.windows.get_focused().unwrap();
+                Some(Action::Buffer(BuffersAction {
+                    buffer_id: window.id.buffer_id,
+                    inner_action: BufferAction::CursorAction {
+                        cursor_id: window.id.cursor_id,
+                        action: CursorAction::Left(1),
+                    },
+                }))
+            }
+            KeyCode::Right => {
+                let window = self.windows.get_focused().unwrap();
+                Some(Action::Buffer(BuffersAction {
+                    buffer_id: window.id.buffer_id,
+                    inner_action: BufferAction::CursorAction {
+                        cursor_id: window.id.cursor_id,
+                        action: CursorAction::Right(1),
                     },
                 }))
             }
@@ -189,7 +206,7 @@ impl Component for Editor {
         Ok(None)
     }
 
-    fn draw(&mut self, f: &mut tui::Frame<'_>, area: Rect) -> Result<()> {
+    fn draw(&self, f: &mut tui::Frame<'_>, area: Rect) -> Result<()> {
         if self.windows.is_empty() {
             let version = version();
 
@@ -204,39 +221,7 @@ impl Component for Editor {
                 let buffer = self.buffers.get(buffer_id);
 
                 if let Some(buffer) = buffer {
-                    let buffer_layout = Layout::default()
-                        .direction(Direction::Vertical)
-                        .constraints(vec![Constraint::Percentage(100), Constraint::Length(1)])
-                        .split(area);
-
-                    let lines: Vec<Line> = buffer
-                        .content
-                        .iter()
-                        .map(|line| Line::from(line.clone()))
-                        .collect();
-
-                    f.render_widget(Text::from(lines), buffer_layout[0]);
-
-                    let mode = Span::styled(
-                        " NORMAL ",
-                        Style::default().bg(Color::Blue).fg(Color::Black),
-                    );
-
-                    let file_name = Span::styled(
-                        format!(
-                            " {} ",
-                            buffer
-                                .file_path
-                                .as_ref()
-                                .unwrap()
-                                .to_str()
-                                .unwrap_or("None")
-                        ),
-                        Style::default().fg(Color::Gray),
-                    );
-                    let status_line = Line::from(vec![mode, file_name]).bg(Color::DarkGray);
-
-                    f.render_widget(status_line, buffer_layout[1]);
+                    let _ = buffer.draw(f, area, &self.context);
 
                     let cursor = buffer.get_cursor(visible_buffer_id.cursor_id);
 
