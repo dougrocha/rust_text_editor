@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::{fs::File, io::BufReader, path::PathBuf};
 
 use color_eyre::eyre::Result;
 use crossterm::event::{KeyCode, KeyEvent};
@@ -6,6 +6,7 @@ use ratatui::{
     layout::Rect,
     text::{Line, Text},
 };
+use ropey::Rope;
 use tokio::sync::mpsc::{self, UnboundedSender};
 
 use crate::{
@@ -185,17 +186,18 @@ impl Component for Editor {
             Action::OpenFile(file_path) => {
                 if let Some(buffer_id) = self.buffers.find_by_file_path(&file_path) {
                     let visible_buffer_id = VisibleBufferId::new(buffer_id, CursorId::default());
-
-                    self.windows.add(visible_buffer_id);
                     self.windows.focus(visible_buffer_id);
-                } else {
-                    // check if buffer already exists
-                    let buffer_id = self.buffers.add(Some(file_path));
-                    let visible_buffer_id = VisibleBufferId::new(buffer_id, CursorId::default());
 
-                    self.windows.add(visible_buffer_id);
-                    self.windows.focus(visible_buffer_id);
+                    return Ok(None);
                 }
+
+                let content = Rope::from_reader(BufReader::new(File::open(&file_path)?))?;
+
+                let buffer_id = self.buffers.add(content, Some(file_path));
+
+                let visible_buffer_id = VisibleBufferId::new(buffer_id, CursorId::default());
+                self.windows.add(visible_buffer_id);
+                self.windows.focus(visible_buffer_id);
             }
             Action::Buffer(buffer_action) => {
                 self.buffers.handle_actions(buffer_action);

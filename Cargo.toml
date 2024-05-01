@@ -32,6 +32,7 @@ libc = "0.2.153"
 log = "0.4.21"
 pretty_assertions = "1.4.0"
 ratatui = { version = "0.26.2", features = ["serde", "macros"] }
+ropey = "1.6.1"
 serde = { version = "1.0.198", features = ["derive"] }
 serde_json = "1.0.116"
 signal-hook = "0.3.17"

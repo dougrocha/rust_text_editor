@@ -1,9 +1,10 @@
-use std::{fs, path::PathBuf};
+use ropey::{Rope, RopeSlice};
+use std::path::PathBuf;
 
 use color_eyre::eyre::Result;
 use ratatui::layout::{Position, Rect};
 
-use crate::{action::Action, components::Component, editor::Context, tui::Frame, window::CursorId};
+use crate::{action::Action, editor::Context, tui::Frame, window::CursorId};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BuffersAction {
@@ -57,10 +58,11 @@ impl Buffers {
         }
     }
 
-    pub fn add(&mut self, file_path: Option<PathBuf>) -> BufferId {
+    pub fn add(&mut self, content: Rope, file_path: Option<PathBuf>) -> BufferId {
         let buffer_id = BufferId(self.next_buffer_id);
         self.next_buffer_id += 1;
-        self.buffers.push(Buffer::new(buffer_id, file_path));
+        self.buffers
+            .push(Buffer::new(buffer_id, content, file_path));
         buffer_id
     }
 
@@ -103,40 +105,31 @@ impl Buffers {
 
 pub struct Buffer {
     pub id: BufferId,
-    pub content: Vec<String>,
+    pub content: Rope,
     pub file_path: Option<PathBuf>,
     pub cursors: Vec<Position>,
 }
 
 impl Buffer {
-    pub fn new(id: BufferId, file_path: Option<PathBuf>) -> Self {
+    pub fn new(id: BufferId, content: Rope, file_path: Option<PathBuf>) -> Self {
         match file_path {
-            Some(file_path) => {
-                let content = fs::read_to_string(&file_path).unwrap();
-                let content = content.lines().map(|line| line.to_string()).collect();
-
-                Self {
-                    id,
-                    file_path: Some(file_path.to_path_buf()),
-                    content,
-                    cursors: vec![Position::default()],
-                }
-            }
+            Some(file_path) => Self {
+                id,
+                file_path: Some(file_path.to_path_buf()),
+                content,
+                cursors: vec![Position::default()],
+            },
             None => Self {
                 id,
                 file_path: None,
-                content: vec![],
+                content,
                 cursors: vec![Position::default()],
             },
         }
     }
 
-    pub fn get_line(&self, index: usize) -> Option<&String> {
-        self.content.get(index)
-    }
-
-    pub fn get_line_mut(&mut self, index: usize) -> Option<&mut String> {
-        self.content.get_mut(index)
+    pub fn get_line(&self, index: usize) -> Option<RopeSlice> {
+        self.content.get_line(index)
     }
 
     pub fn get_cursor(&self, cursor_id: CursorId) -> &Position {
@@ -187,8 +180,8 @@ impl Buffer {
 
         let lines: Vec<Line> = self
             .content
-            .iter()
-            .map(|line| Line::from(line.clone()))
+            .lines()
+            .map(|line| Line::from(line.to_string()))
             .collect();
 
         f.render_widget(Text::from(lines), buffer_layout[0]);
