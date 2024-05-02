@@ -1,5 +1,5 @@
 use ropey::{Rope, RopeSlice};
-use std::path::PathBuf;
+use std::{cmp, path::PathBuf};
 
 use color_eyre::eyre::Result;
 use ratatui::layout::{Position, Rect};
@@ -156,21 +156,38 @@ impl Buffer {
                 cursor.y = cursor.y.saturating_sub(n as u16);
             }
             CursorAction::Down(n) => {
+                let lines_len = self.content.len_lines() as u16;
+
                 let cursor = self.get_cursor_mut(cursor_id);
-                cursor.y += n as u16;
+                // subtract by two to handle end-of-line case
+                // makes it more like vim
+                cursor.y = cmp::min(lines_len - 2, cursor.y.saturating_add(n as u16));
             }
             CursorAction::Left(n) => {
                 let cursor = self.get_cursor_mut(cursor_id);
                 cursor.x = cursor.x.saturating_sub(n as u16);
             }
             CursorAction::Right(n) => {
-                let cursor = self.get_cursor_mut(cursor_id);
-                cursor.x += n as u16;
+                let cursor = self.get_cursor(cursor_id);
+                // change how much is subtracted dependent on mode of editor
+                let line_len = self
+                    .content
+                    .line(cursor.y.into())
+                    .len_chars()
+                    .saturating_sub(3) as u16;
+
+                self.get_cursor_mut(cursor_id).x = cmp::min(cursor.x + n as u16, line_len);
             }
         }
     }
 
-    pub fn draw(&self, f: &mut Frame<'_>, area: Rect, context: &Context) -> Result<()> {
+    pub fn draw(
+        &self,
+        f: &mut Frame<'_>,
+        area: Rect,
+        cursor_id: CursorId,
+        context: &Context,
+    ) -> Result<()> {
         use ratatui::prelude::*;
 
         let buffer_layout = Layout::default()
@@ -185,6 +202,20 @@ impl Buffer {
             .collect();
 
         f.render_widget(Text::from(lines), buffer_layout[0]);
+        self.draw_status_line(f, buffer_layout[1], cursor_id, context)?;
+
+        Ok(())
+    }
+
+    pub fn draw_status_line(
+        &self,
+        f: &mut Frame<'_>,
+        area: Rect,
+        cursor_id: CursorId,
+        context: &Context,
+    ) -> Result<()> {
+        use ratatui::prelude::*;
+        let cursor = self.get_cursor(cursor_id);
 
         let mode = Span::styled(
             context.mode.to_string(),
@@ -198,9 +229,23 @@ impl Buffer {
             ),
             Style::default().fg(Color::Gray),
         );
-        let status_line = Line::from(vec![mode, file_name]).bg(Color::DarkGray);
 
-        f.render_widget(status_line, buffer_layout[1]);
+        let cursor_pos = Span::styled(
+            format!(
+                " {}|{} {}|{} ",
+                cursor.y + 1,
+                self.content.len_lines().saturating_sub(1),
+                cursor.x + 1,
+                self.content
+                    .line(cursor.y.into())
+                    .len_chars()
+                    .saturating_sub(2),
+            ),
+            Style::default(),
+        );
+
+        let content = Line::from(vec![mode, file_name, cursor_pos]).bg(Color::DarkGray);
+        f.render_widget(content, area);
 
         Ok(())
     }

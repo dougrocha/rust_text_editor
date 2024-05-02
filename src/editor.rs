@@ -223,10 +223,8 @@ impl Component for Editor {
                 let buffer = self.buffers.get(buffer_id);
 
                 if let Some(buffer) = buffer {
-                    let _ = buffer.draw(f, area, &self.context);
-
+                    buffer.draw(f, area, visible_buffer_id.cursor_id, &self.context)?;
                     let cursor = buffer.get_cursor(visible_buffer_id.cursor_id);
-
                     f.set_cursor(cursor.x, cursor.y);
                 }
             }
