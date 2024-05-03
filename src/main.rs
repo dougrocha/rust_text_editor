@@ -25,7 +25,9 @@ async fn tokio_main() -> Result<()> {
 
     let args = Cli::parse();
 
-    let mut app = Editor::new(args.files)?;
+    let current_dir = std::env::current_dir()?;
+
+    let mut app = Editor::new(current_dir, args.files)?;
     app.run().await?;
 
     Ok(())
