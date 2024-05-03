@@ -10,8 +10,8 @@ use ropey::Rope;
 use tokio::sync::mpsc::{self, UnboundedSender};
 
 use crate::{
-    action::Action,
-    buffer::{BufferAction, Buffers, BuffersAction, CursorAction},
+    action::{Action, BufferAction, BuffersAction, CursorAction},
+    buffer::Buffers,
     components::Component,
     config::Config,
     mode::Mode,
@@ -23,6 +23,7 @@ use crate::{
 #[derive(Clone)]
 pub struct Context {
     pub action_tx: Option<UnboundedSender<Action>>,
+    pub current_working_directory: PathBuf,
     pub file_paths: Vec<PathBuf>,
     pub config: Config,
     pub mode: Mode,
@@ -36,10 +37,11 @@ pub struct Editor {
 }
 
 impl Editor {
-    pub fn new(file_paths: Vec<PathBuf>) -> Result<Self> {
+    pub fn new(cwd: PathBuf, file_paths: Vec<PathBuf>) -> Result<Self> {
         let context = Context {
             action_tx: None,
             config: Config::new()?,
+            current_working_directory: cwd,
             file_paths,
             mode: Mode::Normal,
         };
@@ -134,48 +136,62 @@ impl Component for Editor {
     }
 
     fn handle_key_events(&mut self, key: KeyEvent) -> Result<Option<Action>> {
-        let event: Option<Action> = match key.code {
-            KeyCode::Up => {
-                let window = self.windows.get_focused().unwrap();
-                Some(Action::Buffer(BuffersAction {
+        let mut event = None;
+
+        let window = self.windows.get_focused().unwrap();
+
+        event = match self.context.mode {
+            Mode::Normal => match key.code {
+                KeyCode::Char('k') => Some(Action::Buffer(BuffersAction {
                     buffer_id: window.id.buffer_id,
                     inner_action: BufferAction::CursorAction {
                         cursor_id: window.id.cursor_id,
                         action: CursorAction::Up(1),
                     },
-                }))
-            }
-            KeyCode::Down => {
-                let window = self.windows.get_focused().unwrap();
-                Some(Action::Buffer(BuffersAction {
+                })),
+                KeyCode::Char('j') => Some(Action::Buffer(BuffersAction {
                     buffer_id: window.id.buffer_id,
                     inner_action: BufferAction::CursorAction {
                         cursor_id: window.id.cursor_id,
                         action: CursorAction::Down(1),
                     },
-                }))
-            }
-            KeyCode::Left => {
-                let window = self.windows.get_focused().unwrap();
-                Some(Action::Buffer(BuffersAction {
+                })),
+                KeyCode::Char('h') => Some(Action::Buffer(BuffersAction {
                     buffer_id: window.id.buffer_id,
                     inner_action: BufferAction::CursorAction {
                         cursor_id: window.id.cursor_id,
                         action: CursorAction::Left(1),
                     },
-                }))
-            }
-            KeyCode::Right => {
-                let window = self.windows.get_focused().unwrap();
-                Some(Action::Buffer(BuffersAction {
+                })),
+                KeyCode::Char('l') => Some(Action::Buffer(BuffersAction {
                     buffer_id: window.id.buffer_id,
                     inner_action: BufferAction::CursorAction {
                         cursor_id: window.id.cursor_id,
                         action: CursorAction::Right(1),
                     },
-                }))
-            }
-            _ => None,
+                })),
+                KeyCode::Char('i') => {
+                    self.context.mode = Mode::Insert;
+                    None
+                }
+                _ => None,
+            },
+            Mode::Insert => match key.code {
+                KeyCode::Char(c) => Some(Action::Buffer(BuffersAction {
+                    buffer_id: window.id.buffer_id,
+                    inner_action: BufferAction::CursorAction {
+                        cursor_id: window.id.cursor_id,
+                        action: CursorAction::InsertChar(c),
+                    },
+                })),
+                KeyCode::Esc => {
+                    self.context.mode = Mode::Normal;
+                    None
+                }
+                _ => None,
+            },
+            Mode::Visual => todo!(),
+            Mode::Search => todo!(),
         };
 
         Ok(event)
@@ -225,7 +241,12 @@ impl Component for Editor {
                 if let Some(buffer) = buffer {
                     buffer.draw(f, area, visible_buffer_id.cursor_id, &self.context)?;
                     let cursor = buffer.get_cursor(visible_buffer_id.cursor_id);
-                    f.set_cursor(cursor.x, cursor.y);
+
+                    let x = buffer
+                        .content
+                        .line_to_char(buffer.content.char_to_line(cursor.range.start));
+                    let y = buffer.content.char_to_line(cursor.range.start);
+                    f.set_cursor(x as u16, y as u16);
                 }
             }
         }

@@ -1,39 +1,15 @@
 use ropey::{Rope, RopeSlice};
-use std::{cmp, path::PathBuf};
+use std::{cmp, ops::Range, path::PathBuf};
 
 use color_eyre::eyre::Result;
 use ratatui::layout::{Position, Rect};
 
-use crate::{action::Action, editor::Context, tui::Frame, window::CursorId};
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct BuffersAction {
-    pub buffer_id: BufferId,
-    pub inner_action: BufferAction,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum BufferAction {
-    Save,
-    CursorAction {
-        cursor_id: CursorId,
-        action: CursorAction,
-    },
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CursorAction {
-    Up(usize),
-    Down(usize),
-    Left(usize),
-    Right(usize),
-}
-
-impl From<BuffersAction> for Action {
-    fn from(action: BuffersAction) -> Action {
-        Action::Buffer(action)
-    }
-}
+use crate::{
+    action::{BufferAction, BuffersAction, CursorAction},
+    editor::Context,
+    tui::Frame,
+    window::CursorId,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BufferId(usize);
@@ -103,11 +79,25 @@ impl Buffers {
     }
 }
 
+#[derive(Default)]
+pub struct Cursor {
+    pub range: Range<usize>,
+    visual_horizontal_offset: Option<usize>,
+}
+
+impl Cursor {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    // handle a lot of cursor specific things in this impl
+}
+
 pub struct Buffer {
     pub id: BufferId,
     pub content: Rope,
     pub file_path: Option<PathBuf>,
-    pub cursors: Vec<Position>,
+    pub cursors: Vec<Cursor>,
 }
 
 impl Buffer {
@@ -117,13 +107,13 @@ impl Buffer {
                 id,
                 file_path: Some(file_path.to_path_buf()),
                 content,
-                cursors: vec![Position::default()],
+                cursors: vec![Cursor::default()],
             },
             None => Self {
                 id,
                 file_path: None,
                 content,
-                cursors: vec![Position::default()],
+                cursors: vec![Cursor::default()],
             },
         }
     }
@@ -132,11 +122,11 @@ impl Buffer {
         self.content.get_line(index)
     }
 
-    pub fn get_cursor(&self, cursor_id: CursorId) -> &Position {
+    pub fn get_cursor(&self, cursor_id: CursorId) -> &Cursor {
         &self.cursors[cursor_id.0]
     }
 
-    pub fn get_cursor_mut(&mut self, cursor_id: CursorId) -> &mut Position {
+    pub fn get_cursor_mut(&mut self, cursor_id: CursorId) -> &mut Cursor {
         &mut self.cursors[cursor_id.0]
     }
 
@@ -150,34 +140,36 @@ impl Buffer {
     }
 
     pub fn handle_cursor_action(&mut self, cursor_id: CursorId, action: CursorAction) {
+        let cursor = self.get_cursor(cursor_id);
+
+        let lines_len = self.content.len_lines() as u16;
+
         match action {
-            CursorAction::Up(n) => {
-                let cursor = self.get_cursor_mut(cursor_id);
-                cursor.y = cursor.y.saturating_sub(n as u16);
-            }
-            CursorAction::Down(n) => {
-                let lines_len = self.content.len_lines() as u16;
-
-                let cursor = self.get_cursor_mut(cursor_id);
-                // subtract by two to handle end-of-line case
-                // makes it more like vim
-                cursor.y = cmp::min(lines_len - 2, cursor.y.saturating_add(n as u16));
-            }
-            CursorAction::Left(n) => {
-                let cursor = self.get_cursor_mut(cursor_id);
-                cursor.x = cursor.x.saturating_sub(n as u16);
-            }
-            CursorAction::Right(n) => {
-                let cursor = self.get_cursor(cursor_id);
-                // change how much is subtracted dependent on mode of editor
-                let line_len = self
-                    .content
-                    .line(cursor.y.into())
-                    .len_chars()
-                    .saturating_sub(3) as u16;
-
-                self.get_cursor_mut(cursor_id).x = cmp::min(cursor.x + n as u16, line_len);
-            }
+            _ => {} // CursorAction::Up(n) => {
+                    //     self.get_cursor_mut(cursor_id).y = cursor.y.saturating_sub(n as u16);
+                    // }
+                    // CursorAction::Down(n) => {
+                    //     // subtract by two to handle end-of-line case
+                    //     // makes it more like vim
+                    //     self.get_cursor_mut(cursor_id).y =
+                    //         cmp::min(lines_len - 2, cursor.y.saturating_add(n as u16));
+                    // }
+                    // CursorAction::Left(n) => {
+                    //     self.get_cursor_mut(cursor_id).x = cursor.x.saturating_sub(n as u16);
+                    // }
+                    // CursorAction::Right(n) => {
+                    //     // change how much is subtracted dependent on mode of editor
+                    //     let line_len = self
+                    //         .content
+                    //         .line(cursor.y.into())
+                    //         .len_chars()
+                    //         .saturating_sub(3) as u16;
+                    //
+                    //     self.get_cursor_mut(cursor_id).x = cmp::min(cursor.x + n as u16, line_len);
+                    // }
+                    // CursorAction::InsertChar(character) => {
+                    //     self.content.insert_char(cursor.x.into(), character);
+                    // }
         }
     }
 
@@ -218,7 +210,7 @@ impl Buffer {
         let cursor = self.get_cursor(cursor_id);
 
         let mode = Span::styled(
-            context.mode.to_string(),
+            format!(" {} ", context.mode),
             Style::default().bg(Color::Blue).fg(Color::Black),
         );
 
@@ -230,22 +222,35 @@ impl Buffer {
             Style::default().fg(Color::Gray),
         );
 
+        let char_line_start = self
+            .content
+            .line_to_char(self.content.char_to_line(cursor.range.start));
+
+        let y = self.content.char_to_line(cursor.range.start);
+
         let cursor_pos = Span::styled(
             format!(
                 " {}|{} {}|{} ",
-                cursor.y + 1,
+                y + 1,
                 self.content.len_lines().saturating_sub(1),
-                cursor.x + 1,
-                self.content
-                    .line(cursor.y.into())
-                    .len_chars()
-                    .saturating_sub(2),
+                // make this work on multiple lines
+                cursor.range.start,
+                self.content.line(y).len_chars().saturating_sub(2),
             ),
             Style::default(),
         );
 
-        let content = Line::from(vec![mode, file_name, cursor_pos]).bg(Color::DarkGray);
-        f.render_widget(content, area);
+        let status_line_layout =
+            Layout::horizontal(vec![Constraint::Ratio(1, 2), Constraint::Ratio(1, 2)]).split(area);
+
+        let left_side = Line::from(vec![mode]).left_aligned().bg(Color::DarkGray);
+
+        let right_side = Line::from(vec![file_name, cursor_pos])
+            .right_aligned()
+            .bg(Color::DarkGray);
+
+        f.render_widget(left_side, status_line_layout[0]);
+        f.render_widget(right_side, status_line_layout[1]);
 
         Ok(())
     }
