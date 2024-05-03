@@ -43,6 +43,9 @@ tokio-util = "0.7.10"
 tracing = "0.1.40"
 tracing-error = "0.2.0"
 tracing-subscriber = { version = "0.3.18", features = ["env-filter", "serde"] }
+tree-sitter = "0.22"
+tree-sitter-rust = "0.21"
 
 [build-dependencies]
+cc = "*"
 vergen = { version = "8.3.1", features = ["build", "git", "gitoxide", "cargo"] }
