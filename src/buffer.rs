@@ -79,10 +79,15 @@ impl Buffers {
     }
 }
 
-#[derive(Default)]
 pub struct Cursor {
-    pub range: Range<usize>,
-    visual_horizontal_offset: Option<usize>,
+    pub x: usize,
+    pub y: usize,
+}
+
+impl Default for Cursor {
+    fn default() -> Self {
+        Self { x: 0, y: 0 }
+    }
 }
 
 impl Cursor {
@@ -91,6 +96,26 @@ impl Cursor {
     }
 
     // handle a lot of cursor specific things in this impl
+
+    #[inline]
+    pub fn move_up(&mut self, content: &Rope, n: usize) {
+        self.y = self.y.saturating_sub(n);
+    }
+
+    #[inline]
+    pub fn move_down(&mut self, content: &Rope, n: usize) {
+        self.y += 1;
+    }
+
+    #[inline]
+    pub fn move_right(&mut self, content: &Rope, n: usize) {
+        self.x = cmp::min(self.x + n, content.line(self.y).len_chars());
+    }
+
+    #[inline]
+    pub fn move_left(&mut self, content: &Rope, n: usize) {
+        self.x = self.x.saturating_sub(n);
+    }
 }
 
 pub struct Buffer {
@@ -140,36 +165,26 @@ impl Buffer {
     }
 
     pub fn handle_cursor_action(&mut self, cursor_id: CursorId, action: CursorAction) {
-        let cursor = self.get_cursor(cursor_id);
-
-        let lines_len = self.content.len_lines() as u16;
+        let content = &self.content;
+        let cursor = &mut self.cursors[cursor_id.0];
 
         match action {
-            _ => {} // CursorAction::Up(n) => {
-                    //     self.get_cursor_mut(cursor_id).y = cursor.y.saturating_sub(n as u16);
-                    // }
-                    // CursorAction::Down(n) => {
-                    //     // subtract by two to handle end-of-line case
-                    //     // makes it more like vim
-                    //     self.get_cursor_mut(cursor_id).y =
-                    //         cmp::min(lines_len - 2, cursor.y.saturating_add(n as u16));
-                    // }
-                    // CursorAction::Left(n) => {
-                    //     self.get_cursor_mut(cursor_id).x = cursor.x.saturating_sub(n as u16);
-                    // }
-                    // CursorAction::Right(n) => {
-                    //     // change how much is subtracted dependent on mode of editor
-                    //     let line_len = self
-                    //         .content
-                    //         .line(cursor.y.into())
-                    //         .len_chars()
-                    //         .saturating_sub(3) as u16;
-                    //
-                    //     self.get_cursor_mut(cursor_id).x = cmp::min(cursor.x + n as u16, line_len);
-                    // }
-                    // CursorAction::InsertChar(character) => {
-                    //     self.content.insert_char(cursor.x.into(), character);
-                    // }
+            CursorAction::Up(n) => {
+                cursor.move_up(content, n);
+            }
+            CursorAction::Right(n) => {
+                cursor.move_right(content, n);
+            }
+            CursorAction::Left(n) => {
+                cursor.move_left(content, n);
+            }
+            CursorAction::Down(n) => {
+                cursor.move_down(content, n);
+            }
+            // CursorAction::InsertChar(character) => {
+            //     self.content.insert_char(cursor.x.into(), character);
+            // }
+            _ => {}
         }
     }
 
@@ -222,20 +237,16 @@ impl Buffer {
             Style::default().fg(Color::Gray),
         );
 
-        let char_line_start = self
-            .content
-            .line_to_char(self.content.char_to_line(cursor.range.start));
-
-        let y = self.content.char_to_line(cursor.range.start);
+        let cur_line_len = self.content.line(cursor.y).len_chars().saturating_sub(2);
 
         let cursor_pos = Span::styled(
             format!(
                 " {}|{} {}|{} ",
-                y + 1,
+                cursor.y + 1,
                 self.content.len_lines().saturating_sub(1),
                 // make this work on multiple lines
-                cursor.range.start,
-                self.content.line(y).len_chars().saturating_sub(2),
+                cursor.x + 1,
+                cur_line_len,
             ),
             Style::default(),
         );

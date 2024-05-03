@@ -242,11 +242,7 @@ impl Component for Editor {
                     buffer.draw(f, area, visible_buffer_id.cursor_id, &self.context)?;
                     let cursor = buffer.get_cursor(visible_buffer_id.cursor_id);
 
-                    let x = buffer
-                        .content
-                        .line_to_char(buffer.content.char_to_line(cursor.range.start));
-                    let y = buffer.content.char_to_line(cursor.range.start);
-                    f.set_cursor(x as u16, y as u16);
+                    f.set_cursor(cursor.x as u16, cursor.y as u16);
                 }
             }
         }
