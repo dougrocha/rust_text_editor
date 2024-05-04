@@ -174,6 +174,13 @@ impl Component for Editor {
                     self.context.mode = Mode::Insert;
                     None
                 }
+                KeyCode::Char('$') => Some(Action::Buffer(BuffersAction {
+                    buffer_id: window.id.buffer_id,
+                    inner_action: BufferAction::CursorAction {
+                        cursor_id: window.id.cursor_id,
+                        action: CursorAction::EndOfLine,
+                    },
+                })),
                 _ => None,
             },
             Mode::Insert => match key.code {
@@ -240,9 +247,11 @@ impl Component for Editor {
 
                 if let Some(buffer) = buffer {
                     buffer.draw(f, area, visible_buffer_id.cursor_id, &self.context)?;
-                    let cursor = buffer.get_cursor(visible_buffer_id.cursor_id);
+                    let cursor = buffer
+                        .get_cursor(visible_buffer_id.cursor_id)
+                        .screen_position(&buffer.content);
 
-                    f.set_cursor(cursor.x as u16, cursor.y as u16);
+                    f.set_cursor(cursor.0, cursor.1);
                 }
             }
         }

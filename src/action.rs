@@ -43,6 +43,7 @@ pub enum CursorAction {
     Left(usize),
     Right(usize),
     InsertChar(char),
+    EndOfLine,
 }
 
 impl From<BuffersAction> for Action {

@@ -1,12 +1,14 @@
 use ropey::{Rope, RopeSlice};
-use std::{cmp, ops::Range, path::PathBuf};
+use std::path::PathBuf;
 
 use color_eyre::eyre::Result;
-use ratatui::layout::{Position, Rect};
+use ratatui::layout::Rect;
 
 use crate::{
     action::{BufferAction, BuffersAction, CursorAction},
+    cursor::Cursor,
     editor::Context,
+    text::text_width,
     tui::Frame,
     window::CursorId,
 };
@@ -79,45 +81,6 @@ impl Buffers {
     }
 }
 
-pub struct Cursor {
-    pub x: usize,
-    pub y: usize,
-}
-
-impl Default for Cursor {
-    fn default() -> Self {
-        Self { x: 0, y: 0 }
-    }
-}
-
-impl Cursor {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    // handle a lot of cursor specific things in this impl
-
-    #[inline]
-    pub fn move_up(&mut self, content: &Rope, n: usize) {
-        self.y = self.y.saturating_sub(n);
-    }
-
-    #[inline]
-    pub fn move_down(&mut self, content: &Rope, n: usize) {
-        self.y += 1;
-    }
-
-    #[inline]
-    pub fn move_right(&mut self, content: &Rope, n: usize) {
-        self.x = cmp::min(self.x + n, content.line(self.y).len_chars());
-    }
-
-    #[inline]
-    pub fn move_left(&mut self, content: &Rope, n: usize) {
-        self.x = self.x.saturating_sub(n);
-    }
-}
-
 pub struct Buffer {
     pub id: BufferId,
     pub content: Rope,
@@ -181,10 +144,10 @@ impl Buffer {
             CursorAction::Down(n) => {
                 cursor.move_down(content, n);
             }
-            // CursorAction::InsertChar(character) => {
-            //     self.content.insert_char(cursor.x.into(), character);
-            // }
-            _ => {}
+            CursorAction::InsertChar(character) => {
+                cursor.insert_char(&mut self.content, character);
+            }
+            CursorAction::EndOfLine => cursor.move_to_end_of_line(content),
         }
     }
 
@@ -237,16 +200,21 @@ impl Buffer {
             Style::default().fg(Color::Gray),
         );
 
-        let cur_line_len = self.content.line(cursor.y).len_chars().saturating_sub(2);
+        let line_index = self.content.char_to_line(cursor.range.start);
+
+        let cur_col = text_width(
+            &self
+                .content
+                .slice(self.content.line_to_char(line_index)..cursor.range.start),
+        );
 
         let cursor_pos = Span::styled(
             format!(
                 " {}|{} {}|{} ",
-                cursor.y + 1,
-                self.content.len_lines().saturating_sub(1),
-                // make this work on multiple lines
-                cursor.x + 1,
-                cur_line_len,
+                line_index + 1,
+                self.content.len_lines(),
+                cur_col + 1,
+                text_width(&self.content.line(line_index)),
             ),
             Style::default(),
         );

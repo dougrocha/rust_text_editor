@@ -45,6 +45,8 @@ tracing-error = "0.2.0"
 tracing-subscriber = { version = "0.3.18", features = ["env-filter", "serde"] }
 tree-sitter = "0.22"
 tree-sitter-rust = "0.21"
+unicode-segmentation = "1.11.0"
+unicode-width = "0.1.12"
 
 [build-dependencies]
 cc = "*"
