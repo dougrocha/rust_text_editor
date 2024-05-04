@@ -128,8 +128,9 @@ impl Buffer {
     }
 
     pub fn handle_cursor_action(&mut self, cursor_id: CursorId, action: CursorAction) {
-        let content = &self.content;
         let cursor = &mut self.cursors[cursor_id.0];
+
+        let content = &self.content;
 
         match action {
             CursorAction::Up(n) => {
@@ -144,10 +145,20 @@ impl Buffer {
             CursorAction::Down(n) => {
                 cursor.move_down(content, n);
             }
-            CursorAction::InsertChar(character) => {
-                cursor.insert_char(&mut self.content, character);
-            }
             CursorAction::EndOfLine => cursor.move_to_end_of_line(content),
+            CursorAction::StartOfLine => cursor.move_to_start_of_line(content),
+            _ => {}
+        }
+
+        // Mutable actions
+        let content = &mut self.content;
+
+        match action {
+            CursorAction::InsertChar(character) => {
+                cursor.insert_char(content, character);
+            }
+            CursorAction::InsertNewLine => cursor.insert_newline(content),
+            _ => {}
         }
     }
 

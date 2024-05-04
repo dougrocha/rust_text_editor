@@ -82,7 +82,7 @@ impl<'a> Iterator for RopeGraphemes<'a> {
 }
 
 /// Finds the next grapheme boundary after the given char position + count.
-pub fn next_grapheme_boundary_n(slice: &RopeSlice, char_idx: usize, count: usize) -> usize {
+pub fn next_grapheme_boundary_nth(slice: &RopeSlice, char_idx: usize, count: usize) -> usize {
     // Bounds check
     debug_assert!(char_idx <= slice.len_chars());
 
@@ -124,7 +124,7 @@ pub fn next_grapheme_boundary_n(slice: &RopeSlice, char_idx: usize, count: usize
 }
 
 /// Finds the previous grapheme boundary before the given char position + count.
-pub fn prev_grapheme_boundary_n(slice: &RopeSlice, char_idx: usize, count: usize) -> usize {
+pub fn prev_grapheme_boundary_nth(slice: &RopeSlice, char_idx: usize, count: usize) -> usize {
     // Bounds check
     debug_assert!(char_idx <= slice.len_chars());
 
@@ -167,10 +167,10 @@ pub fn prev_grapheme_boundary_n(slice: &RopeSlice, char_idx: usize, count: usize
 
 /// Finds the next grapheme boundary after the given char position.
 pub fn next_grapheme_boundary(slice: &RopeSlice, char_idx: usize) -> usize {
-    next_grapheme_boundary_n(slice, char_idx, 1)
+    next_grapheme_boundary_nth(slice, char_idx, 1)
 }
 
 /// Finds the previous grapheme boundary before the given char position.
 pub fn prev_grapheme_boundary(slice: &RopeSlice, char_idx: usize) -> usize {
-    prev_grapheme_boundary_n(slice, char_idx, 1)
+    prev_grapheme_boundary_nth(slice, char_idx, 1)
 }

@@ -44,10 +44,6 @@ pub enum CursorAction {
     Right(usize),
     InsertChar(char),
     EndOfLine,
-}
-
-impl From<BuffersAction> for Action {
-    fn from(action: BuffersAction) -> Action {
-        Action::Buffer(action)
-    }
+    StartOfLine,
+    InsertNewLine,
 }

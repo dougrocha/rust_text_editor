@@ -89,8 +89,8 @@ impl Config {
     }
 }
 
-#[derive(Clone, Debug, Default, Deref, DerefMut)]
-pub struct KeyBindings(pub HashMap<Mode, HashMap<Vec<KeyEvent>, Action>>);
+// #[derive(Clone, Debug, Default, Deref, DerefMut)]
+// pub struct KeyBindings(pub HashMap<Mode, HashMap<Vec<KeyEvent>, Action>>);
 
 // impl<'de> Deserialize<'de> for KeyBindings {
 //     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>

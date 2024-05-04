@@ -1,4 +1,7 @@
-use crate::buffer::BufferId;
+use crate::{
+    action::{Action, BufferAction, BuffersAction, CursorAction},
+    buffer::BufferId,
+};
 
 #[derive(Default)]
 pub struct Windows {
@@ -61,5 +64,51 @@ impl VisibleBufferId {
             buffer_id,
             cursor_id,
         }
+    }
+
+    fn send_buffer_action(&self, action: BufferAction) -> Action {
+        Action::Buffer(BuffersAction {
+            buffer_id: self.buffer_id,
+            inner_action: action,
+        })
+    }
+
+    fn send_cursor_action(&self, action: CursorAction) -> Action {
+        self.send_buffer_action(BufferAction::CursorAction {
+            cursor_id: self.cursor_id,
+            action,
+        })
+    }
+
+    pub fn insert_char(&self, char: char) -> Action {
+        self.send_cursor_action(CursorAction::InsertChar(char))
+    }
+
+    pub fn insert_newline(&self) -> Action {
+        self.send_cursor_action(CursorAction::InsertNewLine)
+    }
+
+    pub fn start_of_line(&self) -> Action {
+        self.send_cursor_action(CursorAction::StartOfLine)
+    }
+
+    pub fn end_of_line(&self) -> Action {
+        self.send_cursor_action(CursorAction::EndOfLine)
+    }
+
+    pub fn move_left(&self, n: usize) -> Action {
+        self.send_cursor_action(CursorAction::Left(n))
+    }
+
+    pub fn move_right(&self, n: usize) -> Action {
+        self.send_cursor_action(CursorAction::Right(n))
+    }
+
+    pub fn move_up(&self, n: usize) -> Action {
+        self.send_cursor_action(CursorAction::Up(n))
+    }
+
+    pub fn move_down(&self, n: usize) -> Action {
+        self.send_cursor_action(CursorAction::Down(n))
     }
 }

@@ -10,7 +10,7 @@ use ropey::Rope;
 use tokio::sync::mpsc::{self, UnboundedSender};
 
 use crate::{
-    action::{Action, BufferAction, BuffersAction, CursorAction},
+    action::Action,
     buffer::Buffers,
     components::Component,
     config::Config,
@@ -136,61 +136,25 @@ impl Component for Editor {
     }
 
     fn handle_key_events(&mut self, key: KeyEvent) -> Result<Option<Action>> {
-        let mut event = None;
-
         let window = self.windows.get_focused().unwrap();
 
-        event = match self.context.mode {
+        let event = match self.context.mode {
             Mode::Normal => match key.code {
-                KeyCode::Char('k') => Some(Action::Buffer(BuffersAction {
-                    buffer_id: window.id.buffer_id,
-                    inner_action: BufferAction::CursorAction {
-                        cursor_id: window.id.cursor_id,
-                        action: CursorAction::Up(1),
-                    },
-                })),
-                KeyCode::Char('j') => Some(Action::Buffer(BuffersAction {
-                    buffer_id: window.id.buffer_id,
-                    inner_action: BufferAction::CursorAction {
-                        cursor_id: window.id.cursor_id,
-                        action: CursorAction::Down(1),
-                    },
-                })),
-                KeyCode::Char('h') => Some(Action::Buffer(BuffersAction {
-                    buffer_id: window.id.buffer_id,
-                    inner_action: BufferAction::CursorAction {
-                        cursor_id: window.id.cursor_id,
-                        action: CursorAction::Left(1),
-                    },
-                })),
-                KeyCode::Char('l') => Some(Action::Buffer(BuffersAction {
-                    buffer_id: window.id.buffer_id,
-                    inner_action: BufferAction::CursorAction {
-                        cursor_id: window.id.cursor_id,
-                        action: CursorAction::Right(1),
-                    },
-                })),
+                KeyCode::Char('k') => Some(window.id.move_up(1)),
+                KeyCode::Char('j') => Some(window.id.move_down(1)),
+                KeyCode::Char('h') => Some(window.id.move_left(1)),
+                KeyCode::Char('l') => Some(window.id.move_right(1)),
+                KeyCode::Char('$') => Some(window.id.end_of_line()),
+                KeyCode::Char('0') => Some(window.id.start_of_line()),
                 KeyCode::Char('i') => {
                     self.context.mode = Mode::Insert;
                     None
                 }
-                KeyCode::Char('$') => Some(Action::Buffer(BuffersAction {
-                    buffer_id: window.id.buffer_id,
-                    inner_action: BufferAction::CursorAction {
-                        cursor_id: window.id.cursor_id,
-                        action: CursorAction::EndOfLine,
-                    },
-                })),
                 _ => None,
             },
             Mode::Insert => match key.code {
-                KeyCode::Char(c) => Some(Action::Buffer(BuffersAction {
-                    buffer_id: window.id.buffer_id,
-                    inner_action: BufferAction::CursorAction {
-                        cursor_id: window.id.cursor_id,
-                        action: CursorAction::InsertChar(c),
-                    },
-                })),
+                KeyCode::Char(c) => Some(window.id.insert_char(c)),
+                KeyCode::Enter => Some(window.id.insert_newline()),
                 KeyCode::Esc => {
                     self.context.mode = Mode::Normal;
                     None
@@ -244,6 +208,8 @@ impl Component for Editor {
                 let buffer_id = visible_buffer_id.buffer_id;
 
                 let buffer = self.buffers.get(buffer_id);
+
+                f.render_widget(ratatui::widgets::Clear, area);
 
                 if let Some(buffer) = buffer {
                     buffer.draw(f, area, visible_buffer_id.cursor_id, &self.context)?;
