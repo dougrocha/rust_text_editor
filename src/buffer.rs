@@ -8,7 +8,7 @@ use crate::{
     action::{BufferAction, BuffersAction, CursorAction},
     cursor::Cursor,
     editor::Context,
-    text::text_width,
+    text::{text_width, RopeGraphemes},
     tui::Frame,
     window::CursorId,
 };
@@ -176,14 +176,28 @@ impl Buffer {
             .constraints(vec![Constraint::Percentage(100), Constraint::Length(1)])
             .split(area);
 
-        let lines: Vec<Line> = self
+        self.draw_lines(f, buffer_layout[0], cursor_id, context)?;
+        self.draw_status_line(f, buffer_layout[1], cursor_id, context)?;
+
+        Ok(())
+    }
+
+    fn draw_lines(
+        &self,
+        f: &mut Frame<'_>,
+        area: Rect,
+        cursor_id: CursorId,
+        context: &Context,
+    ) -> Result<()> {
+        use ratatui::prelude::*;
+
+        let text = self
             .content
             .lines()
-            .map(|line| Line::from(line.to_string()))
-            .collect();
+            .map(|line| line.to_string())
+            .collect::<String>();
 
-        f.render_widget(Text::from(lines), buffer_layout[0]);
-        self.draw_status_line(f, buffer_layout[1], cursor_id, context)?;
+        f.render_widget(Text::from(text), area);
 
         Ok(())
     }

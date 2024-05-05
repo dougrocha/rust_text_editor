@@ -17,6 +17,10 @@ impl Cursor {
         Self::default()
     }
 
+    pub fn with_range(start: usize, end: usize) -> Self {
+        Self { range: start..end }
+    }
+
     pub fn screen_position(&self, content: &Rope) -> (u16, u16) {
         let y = content.char_to_line(self.range.start);
 
@@ -131,5 +135,35 @@ impl Cursor {
     #[inline]
     pub fn move_to_start_of_buffer(&mut self, content: &Rope) {
         self.range = 0..next_grapheme_boundary(&content.slice(..), 0);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use pretty_assertions::assert_eq;
+
+    use super::*;
+
+    #[test]
+    fn new_line_works() {
+        let mut cursor = Cursor::with_range(5, 6);
+        let mut content = Rope::from_str("Hello!\nWorld!");
+
+        assert_eq!(content.len_lines(), 2);
+
+        cursor.insert_newline(&mut content);
+
+        assert_eq!(content.len_lines(), 3);
+        assert_eq!(content.to_string(), "Hello\n!\nWorld!");
+    }
+
+    #[test]
+    fn insert_char_works() {
+        let mut cursor = Cursor::with_range(4, 5);
+        let mut content = Rope::from_str("Hell!\nWorld!");
+
+        cursor.insert_char(&mut content, 'o');
+
+        assert_eq!(content.to_string(), "Hello!\nWorld!");
     }
 }
