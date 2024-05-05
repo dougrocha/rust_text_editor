@@ -1,36 +1,57 @@
-use crate::{
-    action::{Action, BufferAction, BuffersAction, CursorAction},
-    buffer::BufferId,
-};
+use ratatui::layout::Rect;
+use ropey::Rope;
+
+use crate::{buffer::BufferId, cursor::Cursor};
 
 #[derive(Default)]
 pub struct Windows {
     pub nodes: Vec<Window>,
-    focused_node: usize,
+    focused_node: Option<WindowId>,
+
+    /// total area for windows
+    area: Rect,
 }
 
 impl Windows {
     pub fn new() -> Self {
-        Self {
-            nodes: vec![],
-            focused_node: 0,
-        }
-    }
-    pub fn add(&mut self, id: VisibleBufferId) {
-        self.nodes.push(Window::new(id));
+        Self::default()
     }
 
-    pub fn focus(&mut self, id: VisibleBufferId) {
-        for (idx, node) in self.nodes.iter_mut().enumerate() {
+    pub fn add(&mut self, buffer_id: BufferId) -> WindowId {
+        // when adding multiple windows, eventually handle different sizes with layout
+        let id = WindowId(self.nodes.len());
+        self.nodes.push(Window::new(id, buffer_id, self.area));
+
+        id
+    }
+
+    pub fn focus(&mut self, id: WindowId) {
+        for node in self.nodes.iter_mut() {
             if node.id == id {
-                self.focused_node = idx;
+                self.focused_node = Some(id);
                 node.focused = true;
             }
         }
     }
 
+    pub fn get_by_buffer_id(&self, buffer_id: BufferId) -> Option<&Window> {
+        self.nodes.iter().find(|node| node.buffer_id == buffer_id)
+    }
+
     pub fn get_focused(&self) -> Option<&Window> {
-        self.nodes.get(self.focused_node)
+        if let Some(focused_node) = self.focused_node {
+            self.nodes.get(focused_node.0)
+        } else {
+            None
+        }
+    }
+
+    pub fn get_focused_mut(&mut self) -> Option<&mut Window> {
+        if let Some(focused_node) = self.focused_node {
+            self.nodes.get_mut(focused_node.0)
+        } else {
+            None
+        }
     }
 
     pub fn is_empty(&self) -> bool {
@@ -39,76 +60,34 @@ impl Windows {
 }
 
 pub struct Window {
-    pub id: VisibleBufferId,
+    pub id: WindowId,
+    pub buffer_id: BufferId,
     pub focused: bool,
+    /// y-offset only
+    pub offset: usize,
+    /// area for single window
+    pub area: Rect,
+    pub cursor: Cursor,
 }
 
 impl Window {
-    pub fn new(id: VisibleBufferId) -> Self {
-        Self { id, focused: false }
-    }
-}
-
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
-pub struct CursorId(pub usize);
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct VisibleBufferId {
-    pub buffer_id: BufferId,
-    pub cursor_id: CursorId,
-}
-
-impl VisibleBufferId {
-    pub fn new(buffer_id: BufferId, cursor_id: CursorId) -> Self {
+    pub fn new(id: WindowId, buffer_id: BufferId, area: Rect) -> Self {
         Self {
+            id,
             buffer_id,
-            cursor_id,
+            focused: false,
+            offset: 0,
+            area,
+            cursor: Cursor::default(),
         }
     }
 
-    fn send_buffer_action(&self, action: BufferAction) -> Action {
-        Action::Buffer(BuffersAction {
-            buffer_id: self.buffer_id,
-            inner_action: action,
-        })
-    }
+    pub fn ensure_cursor_in_view(&mut self, content: &Rope, scroll_off: usize) {
+        let content_slice = content.slice(..);
 
-    fn send_cursor_action(&self, action: CursorAction) -> Action {
-        self.send_buffer_action(BufferAction::CursorAction {
-            cursor_id: self.cursor_id,
-            action,
-        })
-    }
-
-    pub fn insert_char(&self, char: char) -> Action {
-        self.send_cursor_action(CursorAction::InsertChar(char))
-    }
-
-    pub fn insert_newline(&self) -> Action {
-        self.send_cursor_action(CursorAction::InsertNewLine)
-    }
-
-    pub fn start_of_line(&self) -> Action {
-        self.send_cursor_action(CursorAction::StartOfLine)
-    }
-
-    pub fn end_of_line(&self) -> Action {
-        self.send_cursor_action(CursorAction::EndOfLine)
-    }
-
-    pub fn move_left(&self, n: usize) -> Action {
-        self.send_cursor_action(CursorAction::Left(n))
-    }
-
-    pub fn move_right(&self, n: usize) -> Action {
-        self.send_cursor_action(CursorAction::Right(n))
-    }
-
-    pub fn move_up(&self, n: usize) -> Action {
-        self.send_cursor_action(CursorAction::Up(n))
-    }
-
-    pub fn move_down(&self, n: usize) -> Action {
-        self.send_cursor_action(CursorAction::Down(n))
+        let buffer_len = content.len_lines();
     }
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WindowId(pub usize);

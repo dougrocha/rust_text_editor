@@ -10,14 +10,8 @@ use ropey::Rope;
 use tokio::sync::mpsc::{self, UnboundedSender};
 
 use crate::{
-    action::Action,
-    buffer::Buffers,
-    components::Component,
-    config::Config,
-    mode::Mode,
-    tui,
-    utils::version,
-    window::{CursorId, VisibleBufferId, Windows},
+    action::Action, buffer::Buffers, components::Component, config::Config, mode::Mode, tui,
+    utils::version, window::Windows,
 };
 
 #[derive(Clone)]
@@ -136,34 +130,37 @@ impl Component for Editor {
     }
 
     fn handle_key_events(&mut self, key: KeyEvent) -> Result<Option<Action>> {
-        let window = self.windows.get_focused().unwrap();
+        let window = self.windows.get_focused_mut().unwrap();
 
         let event = match self.context.mode {
             Mode::Normal => match key.code {
-                KeyCode::Char('k') => Some(window.id.move_up(1)),
-                KeyCode::Char('j') => Some(window.id.move_down(1)),
-                KeyCode::Char('h') => Some(window.id.move_left(1)),
-                KeyCode::Char('l') => Some(window.id.move_right(1)),
-                KeyCode::Char('$') => Some(window.id.end_of_line()),
-                KeyCode::Char('0') => Some(window.id.start_of_line()),
-                KeyCode::Char('i') => {
-                    self.context.mode = Mode::Insert;
-                    None
-                }
+                // KeyCode::Char('k') => Some(window.move_up(1)),
+                // KeyCode::Char('j') => Some(window.move_down(1)),
+                // KeyCode::Char('h') => Some(window.move_left(1)),
+                // KeyCode::Char('l') => Some(window.move_right(1)),
+                // KeyCode::Char('$') => Some(window.end_of_line()),
+                // KeyCode::Char('0') => Some(window.start_of_line()),
+                // KeyCode::Char('i') => {
+                //     self.context.mode = Mode::Insert;
+                //     None
+                // }
                 _ => None,
             },
             Mode::Insert => match key.code {
-                KeyCode::Char(c) => Some(window.id.insert_char(c)),
-                KeyCode::Enter => Some(window.id.insert_newline()),
-                KeyCode::Esc => {
-                    self.context.mode = Mode::Normal;
-                    None
-                }
+                // KeyCode::Char(c) => Some(window.insert_char(c)),
+                // KeyCode::Enter => Some(window.insert_newline()),
+                // KeyCode::Esc => {
+                //     self.context.mode = Mode::Normal;
+                //     None
+                // }
                 _ => None,
             },
             Mode::Visual => todo!(),
             Mode::Search => todo!(),
         };
+
+        let buffer = self.buffers.get(window.buffer_id).unwrap();
+        window.ensure_cursor_in_view(&buffer.content, 8);
 
         Ok(event)
     }
@@ -172,8 +169,8 @@ impl Component for Editor {
         match action {
             Action::OpenFile(file_path) => {
                 if let Some(buffer_id) = self.buffers.find_by_file_path(&file_path) {
-                    let visible_buffer_id = VisibleBufferId::new(buffer_id, CursorId::default());
-                    self.windows.focus(visible_buffer_id);
+                    let window_id = self.windows.add(buffer_id);
+                    self.windows.focus(window_id);
 
                     return Ok(None);
                 }
@@ -181,14 +178,12 @@ impl Component for Editor {
                 let content = Rope::from_reader(BufReader::new(File::open(&file_path)?))?;
 
                 let buffer_id = self.buffers.add(content, Some(file_path));
-
-                let visible_buffer_id = VisibleBufferId::new(buffer_id, CursorId::default());
-                self.windows.add(visible_buffer_id);
-                self.windows.focus(visible_buffer_id);
+                let window_id = self.windows.add(buffer_id);
+                self.windows.focus(window_id);
             }
-            Action::Buffer(buffer_action) => {
-                self.buffers.handle_actions(buffer_action);
-            }
+            // Action::Buffer(buffer_action) => {
+            //     self.buffers.handle_actions(buffer_action);
+            // }
             _ => {}
         }
 
@@ -204,20 +199,17 @@ impl Component for Editor {
             f.render_widget(Text::from(lines), area);
         } else {
             for window in &self.windows.nodes {
-                let visible_buffer_id = window.id;
-                let buffer_id = visible_buffer_id.buffer_id;
+                let buffer_id = window.buffer_id;
 
                 let buffer = self.buffers.get(buffer_id);
 
-                f.render_widget(ratatui::widgets::Clear, area);
-
                 if let Some(buffer) = buffer {
-                    buffer.draw(f, area, visible_buffer_id.cursor_id, &self.context)?;
-                    let cursor = buffer
-                        .get_cursor(visible_buffer_id.cursor_id)
-                        .screen_position(&buffer.content);
-
-                    f.set_cursor(cursor.0, cursor.1);
+                    buffer.draw(f, &self.context, &window)?;
+                    // let cursor = buffer
+                    //     .get_cursor(visible_buffer_id.cursor_id)
+                    //     .to_screen_position(&buffer.content);
+                    //
+                    // f.set_cursor(cursor.0, cursor.1);
                 }
             }
         }

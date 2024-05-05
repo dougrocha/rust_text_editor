@@ -1,7 +1,6 @@
 use std::{cmp, ops::Range};
 
 use ropey::Rope;
-use unicode_width::UnicodeWidthStr;
 
 use crate::text::{
     next_grapheme_boundary, next_grapheme_boundary_nth, prev_grapheme_boundary_nth, text_width,
@@ -18,10 +17,13 @@ impl Cursor {
     }
 
     pub fn with_range(start: usize, end: usize) -> Self {
-        Self { range: start..end }
+        Self {
+            range: start..end,
+            ..Default::default()
+        }
     }
 
-    pub fn screen_position(&self, content: &Rope) -> (u16, u16) {
+    pub fn to_screen_position(&self, content: &Rope) -> (u16, u16) {
         let y = content.char_to_line(self.range.start);
 
         let x = {
@@ -43,7 +45,7 @@ impl Cursor {
         let cur_col = {
             let cur_line_index = content.line_to_char(cur_line_index);
             let line_to_cursor = content.slice(cur_line_index..self.range.start);
-            UnicodeWidthStr::width(line_to_cursor.as_str().unwrap())
+            text_width(&line_to_cursor)
         };
 
         let new_line = content.line(new_line_index);
@@ -63,7 +65,7 @@ impl Cursor {
         let cur_col = {
             let cur_line_index = content.line_to_char(cur_line_index);
             let line_to_cursor = content.slice(cur_line_index..self.range.start);
-            UnicodeWidthStr::width(line_to_cursor.as_str().unwrap())
+            text_width(&line_to_cursor)
         };
 
         let new_line = content.line(new_line_index);
