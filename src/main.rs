@@ -1,4 +1,4 @@
-pub mod action;
+pub mod app;
 pub mod buffer;
 pub mod cli;
 pub mod components;
@@ -6,17 +6,17 @@ pub mod config;
 pub mod cursor;
 pub mod editor;
 pub mod mode;
+pub mod terminal;
 pub mod text;
-pub mod tui;
 pub mod utils;
 pub mod window;
 
 use clap::Parser;
-use cli::Cli;
+use cli::Args;
 use color_eyre::eyre::Result;
 
 use crate::{
-    editor::Editor,
+    app::App,
     utils::{initialize_logging, initialize_panic_handler},
 };
 
@@ -25,11 +25,9 @@ async fn tokio_main() -> Result<()> {
 
     initialize_panic_handler()?;
 
-    let args = Cli::parse();
+    let args = Args::parse();
 
-    let current_dir = std::env::current_dir()?;
-
-    let mut app = Editor::new(current_dir, args.files)?;
+    let mut app = App::new(args)?;
     app.run().await?;
 
     Ok(())

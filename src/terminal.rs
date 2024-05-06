@@ -14,7 +14,6 @@ use crossterm::{
 };
 use futures::{FutureExt, StreamExt};
 use ratatui::backend::CrosstermBackend as Backend;
-use serde::{Deserialize, Serialize};
 use tokio::{
     sync::mpsc::{self, UnboundedReceiver, UnboundedSender},
     task::JoinHandle,
@@ -27,14 +26,10 @@ pub fn io() -> IO {
 }
 pub type Frame<'a> = ratatui::Frame<'a>;
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum Event {
-    Init,
-    Quit,
-    Error,
-    Closed,
     Tick,
     Render,
+    Error,
     FocusGained,
     FocusLost,
     Paste(String),
@@ -43,7 +38,7 @@ pub enum Event {
     Resize(u16, u16),
 }
 
-pub struct Tui {
+pub struct Terminal {
     pub terminal: ratatui::Terminal<Backend<IO>>,
     pub task: JoinHandle<()>,
     pub cancellation_token: CancellationToken,
@@ -55,7 +50,7 @@ pub struct Tui {
     pub paste: bool,
 }
 
-impl Tui {
+impl Terminal {
     pub fn new() -> Result<Self> {
         let tick_rate = 4.0;
         let frame_rate = 60.0;
@@ -109,7 +104,6 @@ impl Tui {
             let mut reader = crossterm::event::EventStream::new();
             let mut tick_interval = tokio::time::interval(tick_delay);
             let mut render_interval = tokio::time::interval(render_delay);
-            _event_tx.send(Event::Init).unwrap();
             loop {
                 let tick_delay = tick_interval.tick();
                 let render_delay = render_interval.tick();
@@ -211,24 +205,12 @@ impl Tui {
         self.cancellation_token.cancel();
     }
 
-    pub fn suspend(&mut self) -> Result<()> {
-        self.exit()?;
-        #[cfg(not(windows))]
-        signal_hook::low_level::raise(signal_hook::consts::signal::SIGTSTP)?;
-        Ok(())
-    }
-
-    pub fn resume(&mut self) -> Result<()> {
-        self.enter()?;
-        Ok(())
-    }
-
     pub async fn next(&mut self) -> Option<Event> {
         self.event_rx.recv().await
     }
 }
 
-impl Deref for Tui {
+impl Deref for Terminal {
     type Target = ratatui::Terminal<Backend<IO>>;
 
     fn deref(&self) -> &Self::Target {
@@ -236,13 +218,13 @@ impl Deref for Tui {
     }
 }
 
-impl DerefMut for Tui {
+impl DerefMut for Terminal {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.terminal
     }
 }
 
-impl Drop for Tui {
+impl Drop for Terminal {
     fn drop(&mut self) {
         self.exit().unwrap();
     }

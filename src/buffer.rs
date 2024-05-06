@@ -1,9 +1,10 @@
 use ropey::{Rope, RopeSlice};
-use std::path::PathBuf;
+use std::{
+    collections::HashMap,
+    path::{Path, PathBuf},
+};
 
-use color_eyre::eyre::Result;
-
-use crate::{editor::Context, tui::Frame, window::Window};
+use crate::{cursor::Cursor, window::WindowId};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BufferId(usize);
@@ -28,15 +29,16 @@ impl Buffers {
         }
     }
 
-    pub fn add(&mut self, content: Rope, file_path: Option<PathBuf>) -> BufferId {
+    pub fn add(&mut self, content: Rope, file_path: Option<&Path>) -> BufferId {
         let buffer_id = BufferId(self.next_buffer_id);
         self.next_buffer_id += 1;
         self.buffers
             .push(Buffer::new(buffer_id, content, file_path));
+
         buffer_id
     }
 
-    pub fn find_by_file_path(&self, file_path: &PathBuf) -> Option<BufferId> {
+    pub fn find_by_file_path(&self, file_path: &Path) -> Option<BufferId> {
         self.iter()
             .find(|b| {
                 if let Some(buf_path) = b.file_path.as_ref() {
@@ -66,24 +68,39 @@ impl Buffers {
 
 pub struct Buffer {
     pub id: BufferId,
-    pub content: Rope,
-    pub file_path: Option<PathBuf>,
+    content: Rope,
+    cursors: HashMap<WindowId, Cursor>,
+    file_path: Option<PathBuf>,
 }
 
 impl Buffer {
-    pub fn new(id: BufferId, content: Rope, file_path: Option<PathBuf>) -> Self {
+    pub fn new(id: BufferId, content: Rope, file_path: Option<&Path>) -> Self {
         match file_path {
             Some(file_path) => Self {
                 id,
-                file_path: Some(file_path.to_path_buf()),
                 content,
+                cursors: HashMap::default(),
+                file_path: Some(file_path.to_path_buf()),
             },
             None => Self {
                 id,
-                file_path: None,
                 content,
+                cursors: HashMap::default(),
+                file_path: None,
             },
         }
+    }
+
+    pub fn content(&self) -> &Rope {
+        &self.content
+    }
+
+    pub fn get_cursor(&self, window_id: WindowId) -> Option<&Cursor> {
+        self.cursors.get(&window_id)
+    }
+
+    pub fn set_cursor(&mut self, window_id: WindowId, cursor: Cursor) {
+        self.cursors.insert(window_id, cursor);
     }
 
     pub fn get_line(&self, index: usize) -> Option<RopeSlice> {
@@ -136,19 +153,19 @@ impl Buffer {
     // }
 
     // TODO: Move this to window struct
-    pub fn draw(&self, f: &mut Frame<'_>, context: &Context, window: &Window) -> Result<()> {
-        use ratatui::prelude::*;
-
-        let buffer_layout = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints(vec![Constraint::Percentage(100), Constraint::Length(1)])
-            .split(window.area);
-
-        // self.draw_lines(f, buffer_layout[0], offset, cursor_id, context)?;
-        // self.draw_status_line(f, buffer_layout[1], cursor_id, context)?;
-
-        Ok(())
-    }
+    // pub fn draw(&self, f: &mut Frame<'_>, context: &Context, window: &Window) -> Result<()> {
+    //     use ratatui::prelude::*;
+    //
+    //     let buffer_layout = Layout::default()
+    //         .direction(Direction::Vertical)
+    //         .constraints(vec![Constraint::Percentage(100), Constraint::Length(1)])
+    //         .split(window.area);
+    //
+    //     // self.draw_lines(f, buffer_layout[0], offset, cursor_id, context)?;
+    //     // self.draw_status_line(f, buffer_layout[1], cursor_id, context)?;
+    //
+    //     Ok(())
+    // }
 
     // fn draw_lines(
     //     &self,

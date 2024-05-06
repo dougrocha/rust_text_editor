@@ -1,219 +1,104 @@
-use std::{fs::File, io::BufReader, path::PathBuf};
+use std::{fs::File, io::BufReader, path::Path};
 
 use color_eyre::eyre::Result;
-use crossterm::event::{KeyCode, KeyEvent};
-use ratatui::{
-    layout::Rect,
-    text::{Line, Text},
-};
+use ratatui::layout::Rect;
 use ropey::Rope;
-use tokio::sync::mpsc::{self, UnboundedSender};
 
 use crate::{
-    action::Action, buffer::Buffers, components::Component, config::Config, mode::Mode, tui,
-    utils::version, window::Windows,
+    buffer::{BufferId, Buffers},
+    components::{self, Component, EventPropagation, Position},
+    mode::Mode,
+    terminal::Event,
+    window::Windows,
 };
 
-#[derive(Clone)]
-pub struct Context {
-    pub action_tx: Option<UnboundedSender<Action>>,
-    pub current_working_directory: PathBuf,
-    pub file_paths: Vec<PathBuf>,
-    pub config: Config,
-    pub mode: Mode,
-}
-
 pub struct Editor {
-    context: Context,
+    area: Rect,
+    pub mode: Mode,
+    pub needs_redraw: bool,
+    pub buffers: Buffers,
+    pub windows: Windows,
     should_quit: bool,
-    buffers: Buffers,
-    windows: Windows,
 }
 
 impl Editor {
-    pub fn new(cwd: PathBuf, file_paths: Vec<PathBuf>) -> Result<Self> {
-        let context = Context {
-            action_tx: None,
-            config: Config::new()?,
-            current_working_directory: cwd,
-            file_paths,
+    pub fn new(area: Rect) -> Self {
+        Self {
+            area,
             mode: Mode::Normal,
-        };
-
-        Ok(Self {
-            context,
-            should_quit: false,
+            needs_redraw: false,
+            windows: Windows::new(area),
             buffers: Buffers::new(),
-            windows: Windows::new(),
-        })
+            should_quit: false,
+        }
     }
 
-    pub async fn run(&mut self) -> Result<()> {
-        let (action_tx, mut action_rx) = mpsc::unbounded_channel();
+    pub fn should_quit(&self) -> bool {
+        self.should_quit
+    }
 
-        let mut tui = tui::Tui::new()?;
-        // tui.mouse(true);
-        tui.enter()?;
+    pub fn open(&mut self, file_path: &Path) -> Result<BufferId> {
+        if let Some(buffer_id) = self.buffers.find_by_file_path(file_path) {
+            let window_id = self.windows.add(buffer_id);
+            self.windows.focus(window_id);
 
-        self.init(tui.size()?, action_tx.clone())?;
-
-        loop {
-            if let Some(e) = tui.next().await {
-                match e {
-                    tui::Event::Quit => action_tx.send(Action::Quit)?,
-                    tui::Event::Tick => action_tx.send(Action::Tick)?,
-                    tui::Event::Render => action_tx.send(Action::Render)?,
-                    tui::Event::Resize(x, y) => action_tx.send(Action::Resize(x, y))?,
-                    tui::Event::Key(key) if key.code == KeyCode::Char('q') => {
-                        action_tx.send(Action::Quit)?;
-                    }
-                    _ => {}
-                }
-
-                if let Some(action) = self.handle_events(Some(e.clone()))? {
-                    action_tx.send(action)?
-                };
-            }
-
-            while let Ok(action) = action_rx.try_recv() {
-                if action != Action::Tick && action != Action::Render {
-                    log::debug!("{action:?}");
-                }
-                match action {
-                    Action::Quit => self.should_quit = true,
-                    Action::Resize(w, h) => {
-                        tui.resize(Rect::new(0, 0, w, h))?;
-                        tui.draw(|f| {
-                            let r = self.draw(f, f.size());
-                            if let Err(e) = r {
-                                action_tx
-                                    .send(Action::Error(format!("Failed to draw: {:?}", e)))
-                                    .unwrap();
-                            }
-                        })?;
-                    }
-                    Action::Render => {
-                        tui.draw(|f| {
-                            let r = self.draw(f, f.size());
-                            if let Err(e) = r {
-                                action_tx
-                                    .send(Action::Error(format!("Failed to draw: {:?}", e)))
-                                    .unwrap();
-                            }
-                        })?;
-                    }
-                    _ => {}
-                }
-
-                if let Some(action) = self.update(action.clone())? {
-                    action_tx.send(action)?
-                };
-            }
-
-            if self.should_quit {
-                tui.stop()?;
-                break;
-            }
+            return Ok(buffer_id);
         }
-        tui.exit()?;
-        Ok(())
+
+        let content = Rope::from_reader(BufReader::new(File::open(file_path)?))?;
+
+        let buffer_id = self.buffers.add(content, Some(file_path));
+        let window_id = self.windows.add(buffer_id);
+        self.windows.focus(window_id);
+
+        Ok(buffer_id)
     }
 }
 
-impl Component for Editor {
-    fn init(&mut self, _area: Rect, action_tx: UnboundedSender<Action>) -> Result<()> {
-        for file_path in self.context.file_paths.iter().cloned() {
-            action_tx.send(Action::OpenFile(file_path))?;
-        }
+#[derive(Default)]
+pub struct EditorView {}
 
-        Ok(())
+impl EditorView {
+    pub fn new() -> Self {
+        Self {}
     }
+}
 
-    fn handle_key_events(&mut self, key: KeyEvent) -> Result<Option<Action>> {
-        let window = self.windows.get_focused_mut().unwrap();
-
-        let event = match self.context.mode {
-            Mode::Normal => match key.code {
-                // KeyCode::Char('k') => Some(window.move_up(1)),
-                // KeyCode::Char('j') => Some(window.move_down(1)),
-                // KeyCode::Char('h') => Some(window.move_left(1)),
-                // KeyCode::Char('l') => Some(window.move_right(1)),
-                // KeyCode::Char('$') => Some(window.end_of_line()),
-                // KeyCode::Char('0') => Some(window.start_of_line()),
-                // KeyCode::Char('i') => {
-                //     self.context.mode = Mode::Insert;
-                //     None
-                // }
-                _ => None,
-            },
-            Mode::Insert => match key.code {
-                // KeyCode::Char(c) => Some(window.insert_char(c)),
-                // KeyCode::Enter => Some(window.insert_newline()),
-                // KeyCode::Esc => {
-                //     self.context.mode = Mode::Normal;
-                //     None
-                // }
-                _ => None,
-            },
-            Mode::Visual => todo!(),
-            Mode::Search => todo!(),
-        };
-
-        let buffer = self.buffers.get(window.buffer_id).unwrap();
-        window.ensure_cursor_in_view(&buffer.content, 8);
-
-        Ok(event)
-    }
-
-    fn update(&mut self, action: Action) -> Result<Option<Action>> {
-        match action {
-            Action::OpenFile(file_path) => {
-                if let Some(buffer_id) = self.buffers.find_by_file_path(&file_path) {
-                    let window_id = self.windows.add(buffer_id);
-                    self.windows.focus(window_id);
-
-                    return Ok(None);
-                }
-
-                let content = Rope::from_reader(BufReader::new(File::open(&file_path)?))?;
-
-                let buffer_id = self.buffers.add(content, Some(file_path));
-                let window_id = self.windows.add(buffer_id);
-                self.windows.focus(window_id);
-            }
-            // Action::Buffer(buffer_action) => {
-            //     self.buffers.handle_actions(buffer_action);
-            // }
+impl Component for EditorView {
+    fn handle_events(
+        &mut self,
+        event: &Event,
+        context: &mut components::Context,
+    ) -> EventPropagation {
+        match event {
+            Event::Key(key_event) => {}
+            Event::Mouse(mouse_event) => {}
             _ => {}
         }
 
-        Ok(None)
+        EventPropagation::Ignore(None)
     }
 
-    fn draw(&self, f: &mut tui::Frame<'_>, area: Rect) -> Result<()> {
-        if self.windows.is_empty() {
-            let version = version();
-
-            let lines: Vec<Line> = version.lines().map(Line::from).collect();
-
-            f.render_widget(Text::from(lines), area);
+    fn cursor(&self, area: Rect, context: &mut Editor) -> Option<Position> {
+        if let Some(window) = context.windows.get_focused() {
+            let buffer = context.buffers.get(window.buffer_id).unwrap();
+            Some(
+                buffer
+                    .get_cursor(window.id)
+                    .unwrap()
+                    .to_screen_position(buffer.content()),
+            )
         } else {
-            for window in &self.windows.nodes {
-                let buffer_id = window.buffer_id;
-
-                let buffer = self.buffers.get(buffer_id);
-
-                if let Some(buffer) = buffer {
-                    buffer.draw(f, &self.context, &window)?;
-                    // let cursor = buffer
-                    //     .get_cursor(visible_buffer_id.cursor_id)
-                    //     .to_screen_position(&buffer.content);
-                    //
-                    // f.set_cursor(cursor.0, cursor.1);
-                }
-            }
+            None
         }
+    }
 
-        Ok(())
+    fn render(
+        &self,
+        f: &mut crate::terminal::Frame<'_>,
+        area: Rect,
+        context: &mut crate::components::Context,
+    ) {
+        todo!()
     }
 }

@@ -1,113 +1,115 @@
-use color_eyre::eyre::Result;
-use crossterm::event::{KeyEvent, MouseEvent};
 use ratatui::layout::Rect;
-use tokio::sync::mpsc::UnboundedSender;
 
 use crate::{
-    action::Action,
-    editor::Context,
-    tui::{Event, Frame},
+    editor::Editor,
+    terminal::{Event, Frame},
 };
+
+pub struct Components {
+    components: Vec<Box<dyn Component>>,
+    area: Rect,
+}
+
+impl Components {
+    pub fn new(area: Rect) -> Self {
+        Self {
+            components: vec![],
+            area,
+        }
+    }
+
+    pub fn area(&self) -> Rect {
+        self.area
+    }
+
+    pub fn resize(&mut self, area: Rect) {
+        self.area = area;
+    }
+
+    pub fn push(&mut self, component: Box<dyn Component>) {
+        self.components.push(component);
+    }
+
+    pub fn cursor(&self, frame: &mut Frame<'_>, context: &mut Context) -> Option<Position> {
+        for component in self.components.iter().rev() {
+            if let Some(cursor) = component.cursor(frame.size(), context.editor) {
+                return Some(cursor);
+            }
+        }
+
+        None
+    }
+
+    /// Handle terminal events and return should_redraw
+    pub fn handle_events(&mut self, event: &Event, context: &mut Context) -> bool {
+        let mut callbacks = vec![];
+        let mut stop_propagation = false;
+
+        for component in self.components.iter_mut().rev() {
+            // if event is not handled
+            // it will propagate upwards
+            match component.handle_events(event, context) {
+                EventPropagation::Ignore(Some(cb)) => {
+                    callbacks.push(cb);
+                }
+                EventPropagation::Stop(Some(cb)) => {
+                    callbacks.push(cb);
+                    stop_propagation = true;
+                    break;
+                }
+                EventPropagation::Ignore(None) => {}
+                EventPropagation::Stop(None) => {
+                    stop_propagation = true;
+                }
+            }
+        }
+
+        for cb in callbacks {
+            cb(self, context);
+        }
+
+        stop_propagation
+    }
+
+    /// Render from bottom up in components stack
+    pub fn render(&mut self, frame: &mut Frame<'_>, context: &mut Context) {
+        for component in &mut self.components {
+            component.render(frame, frame.size(), context);
+        }
+    }
+}
+
+pub struct Context<'a> {
+    pub editor: &'a mut Editor,
+}
+
+/// Event callback to be called when event is either done propagating
+/// or has passed through all components
+type EventCallback = Box<dyn FnOnce(&mut Components, &mut Context)>;
+
+pub enum EventPropagation {
+    Ignore(Option<EventCallback>),
+    Stop(Option<EventCallback>),
+}
+
+pub struct Position {
+    pub x: usize,
+    pub y: usize,
+}
 
 /// `Component` is a trait that represents a visual and interactive element of the user interface.
 /// Implementors of this trait can be registered with the main application loop and will be able to receive events,
 /// update state, and be rendered on the screen.
 pub trait Component {
-    /// Register an action handler that can send actions for processing if necessary.
+    /// Handle events for current component
     ///
-    /// # Arguments
-    ///
-    /// * `tx` - An unbounded sender that can send actions.
-    ///
-    /// # Returns
-    ///
-    /// * `Result<()>` - An Ok result or an error.
-    #[allow(unused_variables)]
-    fn register_action_handler(&mut self, tx: UnboundedSender<Action>) -> Result<()> {
-        Ok(())
+    /// Returns whether or not the event was consumed by the component
+    fn handle_events(&mut self, _event: &Event, _context: &mut Context) -> EventPropagation {
+        EventPropagation::Ignore(None)
     }
-    /// Register a configuration handler that provides configuration settings if necessary.
-    ///
-    /// # Arguments
-    ///
-    /// * `config` - Configuration settings.
-    ///
-    /// # Returns
-    ///
-    /// * `Result<()>` - An Ok result or an error.
-    #[allow(unused_variables)]
-    fn register_context_handler(&mut self, context: Context) -> Result<()> {
-        Ok(())
-    }
-    /// Initialize the component with a specified area if necessary.
-    ///
-    /// # Arguments
-    ///
-    /// * `area` - Rectangular area to initialize the component within.
-    ///
-    /// # Returns
-    ///
-    /// * `Result<()>` - An Ok result or an error.
-    #[allow(unused_variables)]
-    fn init(&mut self, area: Rect, action_tx: UnboundedSender<Action>) -> Result<()> {
-        Ok(())
-    }
-    /// Handle incoming events and produce actions if necessary.
-    ///
-    /// # Arguments
-    ///
-    /// * `event` - An optional event to be processed.
-    ///
-    /// # Returns
-    ///
-    /// * `Result<Option<Action>>` - An action to be processed or none.
-    #[allow(unused_variables)]
-    fn handle_events(&mut self, event: Option<Event>) -> Result<Option<Action>> {
-        let r = match event {
-            Some(Event::Key(key_event)) => self.handle_key_events(key_event)?,
-            Some(Event::Mouse(mouse_event)) => self.handle_mouse_events(mouse_event)?,
-            _ => None,
-        };
-        Ok(r)
-    }
-    /// Handle key events and produce actions if necessary.
-    ///
-    /// # Arguments
-    ///
-    /// * `key` - A key event to be processed.
-    ///
-    /// # Returns
-    ///
-    /// * `Result<Option<Action>>` - An action to be processed or none.
-    #[allow(unused_variables)]
-    fn handle_key_events(&mut self, key: KeyEvent) -> Result<Option<Action>> {
-        Ok(None)
-    }
-    /// Handle mouse events and produce actions if necessary.
-    ///
-    /// # Arguments
-    ///
-    /// * `mouse` - A mouse event to be processed.
-    ///
-    /// # Returns
-    ///
-    /// * `Result<Option<Action>>` - An action to be processed or none.
-    #[allow(unused_variables)]
-    fn handle_mouse_events(&mut self, mouse: MouseEvent) -> Result<Option<Action>> {
-        Ok(None)
-    }
-    /// Update the state of the component based on a received action. (REQUIRED)
-    ///
-    /// # Arguments
-    ///
-    /// * `action` - An action that may modify the state of the component.
-    ///
-    /// # Returns
-    ///
-    /// * `Result<Option<Action>>` - An action to be processed or none.
-    #[allow(unused_variables)]
-    fn update(&mut self, action: Action) -> Result<Option<Action>> {
-        Ok(None)
+
+    fn cursor(&self, _area: Rect, _contextt: &mut Editor) -> Option<Position> {
+        None
     }
     /// Render the component on the screen. (REQUIRED)
     ///
@@ -115,11 +117,23 @@ pub trait Component {
     ///
     /// * `f` - A frame used for rendering.
     /// * `area` - The area in which the component should be drawn.
+    /// * `context` - References to editor.
     ///
     /// # Returns
     ///
     /// * `Result<()>` - An Ok result or an error.
-    fn draw(&self, f: &mut Frame<'_>, area: Rect) -> Result<()> {
-        Ok(())
+    fn render(&self, f: &mut Frame<'_>, area: Rect, context: &mut Context);
+
+    /// Name of type
+    fn type_name(&self) -> &'static str {
+        std::any::type_name::<Self>()
+    }
+
+    /// Id of component
+    ///
+    /// Useful in determining what component this is
+    #[doc(hidden)]
+    fn id(&self, _test: u32) -> Option<&'static str> {
+        None
     }
 }

@@ -1,20 +1,22 @@
 use ratatui::layout::Rect;
-use ropey::Rope;
 
 use crate::{buffer::BufferId, cursor::Cursor};
 
 #[derive(Default)]
 pub struct Windows {
     pub nodes: Vec<Window>,
-    focused_node: Option<WindowId>,
+    pub focused_node: Option<WindowId>,
 
     /// total area for windows
     area: Rect,
 }
 
 impl Windows {
-    pub fn new() -> Self {
-        Self::default()
+    pub fn new(area: Rect) -> Self {
+        Self {
+            area,
+            ..Default::default()
+        }
     }
 
     pub fn add(&mut self, buffer_id: BufferId) -> WindowId {
@@ -81,13 +83,7 @@ impl Window {
             cursor: Cursor::default(),
         }
     }
-
-    pub fn ensure_cursor_in_view(&mut self, content: &Rope, scroll_off: usize) {
-        let content_slice = content.slice(..);
-
-        let buffer_len = content.len_lines();
-    }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct WindowId(pub usize);
