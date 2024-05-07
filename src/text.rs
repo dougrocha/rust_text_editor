@@ -1,9 +1,18 @@
+use std::cmp;
+
 use ropey::{iter::Chunks, str_utils::byte_to_char_idx, RopeSlice};
 use unicode_segmentation::{GraphemeCursor, GraphemeIncomplete};
 use unicode_width::UnicodeWidthStr;
 
+use crate::{cursor::Cursor, editor::Editor};
+
+// eventually keep track of multiple keypress and if a number was inserted before
+pub struct Context<'a> {
+    pub editor: &'a mut Editor,
+}
+
 /// Returns the display length of a unicode string
-pub fn text_width(content: &RopeSlice) -> usize {
+pub fn width(content: &RopeSlice) -> usize {
     // as_str will sometimes panic while crossing chunk borders
     match content.as_str() {
         Some(str) => UnicodeWidthStr::width(str),
@@ -12,6 +21,116 @@ pub fn text_width(content: &RopeSlice) -> usize {
             UnicodeWidthStr::width(content.as_str())
         }
     }
+}
+
+#[inline]
+pub fn move_right(context: &mut Context) {
+    let n = 1;
+
+    let focused_window = context.editor.windows.get_focused().unwrap();
+    let buf = context
+        .editor
+        .buffers
+        .get_mut(focused_window.buffer_id)
+        .unwrap();
+    let cursor = buf.get_cursor(focused_window.id);
+    let content = &buf.content().slice(..);
+
+    let new_start = next_grapheme_boundary_nth(content, cursor.range.start, n);
+    let cursor = Cursor {
+        range: new_start..next_grapheme_boundary(content, new_start),
+    };
+
+    buf.set_cursor(focused_window.id, cursor);
+}
+
+#[inline]
+pub fn move_up(context: &mut Context) {
+    let n = 1;
+
+    let focused_window = context.editor.windows.get_focused().unwrap();
+    let buf = context
+        .editor
+        .buffers
+        .get_mut(focused_window.buffer_id)
+        .unwrap();
+    let cursor = buf.get_cursor(focused_window.id);
+    let content = &buf.content().slice(..);
+
+    let cur_line_index = content.char_to_line(cursor.range.start);
+    let new_line_index = cmp::max(0, cur_line_index.saturating_sub(n));
+
+    let cur_col = {
+        let cur_line_index = content.line_to_char(cur_line_index);
+        let line_to_cursor = content.slice(cur_line_index..cursor.range.start);
+        width(&line_to_cursor)
+    };
+
+    let new_line = content.line(new_line_index);
+    let new_line_width = width(&new_line);
+    let char_offset = content.line_to_char(new_line_index) + cmp::min(new_line_width, cur_col);
+
+    let cursor = Cursor {
+        range: char_offset..next_grapheme_boundary(content, char_offset),
+    };
+
+    buf.set_cursor(focused_window.id, cursor);
+}
+
+#[inline]
+pub fn move_down(context: &mut Context) {
+    let n = 1;
+
+    let focused_window = context.editor.windows.get_focused().unwrap();
+    let buf = context
+        .editor
+        .buffers
+        .get_mut(focused_window.buffer_id)
+        .unwrap();
+    let cursor = buf.get_cursor(focused_window.id);
+    let content = &buf.content().slice(..);
+
+    let lines_len = content.len_lines().saturating_sub(1);
+
+    let cur_line_index = content.char_to_line(cursor.range.start);
+    let new_line_index = cmp::min(cur_line_index + n, lines_len);
+
+    let cur_col = {
+        let cur_line_index = content.line_to_char(cur_line_index);
+        let line_to_cursor = content.slice(cur_line_index..cursor.range.start);
+        width(&line_to_cursor)
+    };
+
+    let new_line = content.line(new_line_index);
+    let new_line_width = width(&new_line);
+    let char_offset = content.line_to_char(new_line_index) + cmp::min(new_line_width, cur_col);
+
+    let cursor = Cursor {
+        range: char_offset..next_grapheme_boundary(content, char_offset),
+    };
+
+    buf.set_cursor(focused_window.id, cursor);
+}
+
+#[inline]
+pub fn move_left(context: &mut Context) {
+    let n = 1;
+
+    let focused_window = context.editor.windows.get_focused().unwrap();
+    let buf = context
+        .editor
+        .buffers
+        .get_mut(focused_window.buffer_id)
+        .unwrap();
+    let cursor = buf.get_cursor(focused_window.id);
+    let content = &buf.content().slice(..);
+
+    let new_start = prev_grapheme_boundary_nth(content, cursor.range.start, n);
+    let cursor = Cursor {
+        range: new_start..next_grapheme_boundary(content, new_start),
+    };
+
+    buf.set_cursor(focused_window.id, cursor);
 }
 
 /// An implementation of a graphemes iterator, for iterating over

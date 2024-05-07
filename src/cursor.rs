@@ -1,9 +1,5 @@
 use std::ops::Range;
 
-use ropey::Rope;
-
-use crate::{components::Position, text::text_width};
-
 #[derive(Default)]
 pub struct Cursor {
     pub range: Range<usize>,
@@ -16,18 +12,6 @@ impl Cursor {
 
     pub fn with_range(start: usize, end: usize) -> Self {
         Self { range: start..end }
-    }
-
-    pub fn to_screen_position(&self, content: &Rope) -> Position {
-        let y = content.char_to_line(self.range.start);
-
-        let x = {
-            let cur_line_index = content.line_to_char(y);
-            let line_to_cursor = content.slice(cur_line_index..self.range.start);
-            text_width(&line_to_cursor)
-        };
-
-        Position { x, y }
     }
 
     // handle a lot of cursor specific things in this impl

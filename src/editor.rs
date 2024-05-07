@@ -1,6 +1,7 @@
 use std::{fs::File, io::BufReader, path::Path};
 
 use color_eyre::eyre::Result;
+use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::layout::Rect;
 use ropey::Rope;
 
@@ -9,11 +10,11 @@ use crate::{
     components::{self, Component, EventPropagation, Position},
     mode::Mode,
     terminal::Event,
+    text::{self, width},
     window::Windows,
 };
 
 pub struct Editor {
-    area: Rect,
     pub mode: Mode,
     pub needs_redraw: bool,
     pub buffers: Buffers,
@@ -24,7 +25,6 @@ pub struct Editor {
 impl Editor {
     pub fn new(area: Rect) -> Self {
         Self {
-            area,
             mode: Mode::Normal,
             needs_redraw: false,
             windows: Windows::new(area),
@@ -53,6 +53,23 @@ impl Editor {
 
         Ok(buffer_id)
     }
+
+    fn cursor(&self) -> Option<Position> {
+        let focused_window = self.windows.get_focused().unwrap();
+        let buf = self.buffers.get(focused_window.buffer_id).unwrap();
+        let content = buf.content();
+
+        let cursor = buf.get_cursor(focused_window.id);
+        let y = content.char_to_line(cursor.range.start);
+
+        let x = {
+            let cur_line_index = content.line_to_char(y);
+            let line_to_cursor = content.slice(cur_line_index..cursor.range.start);
+            width(&line_to_cursor)
+        };
+
+        Some(Position { x, y })
+    }
 }
 
 #[derive(Default)]
@@ -61,6 +78,27 @@ pub struct EditorView {}
 impl EditorView {
     pub fn new() -> Self {
         Self {}
+    }
+
+    fn handle_key_events(
+        &mut self,
+        event: &KeyEvent,
+        context: &mut components::Context,
+    ) -> EventPropagation {
+        let mut event_context: text::Context = text::Context {
+            editor: context.editor,
+        };
+
+        match event.code {
+            KeyCode::Char('q') => context.editor.should_quit = true,
+            KeyCode::Char('l') => text::move_right(&mut event_context),
+            KeyCode::Char('h') => text::move_left(&mut event_context),
+            KeyCode::Char('j') => text::move_down(&mut event_context),
+            KeyCode::Char('k') => text::move_up(&mut event_context),
+            _ => {}
+        }
+
+        EventPropagation::Consume(None)
     }
 }
 
@@ -71,26 +109,14 @@ impl Component for EditorView {
         context: &mut components::Context,
     ) -> EventPropagation {
         match event {
-            Event::Key(key_event) => {}
-            Event::Mouse(mouse_event) => {}
-            _ => {}
+            Event::Key(key_event) => self.handle_key_events(key_event, context),
+            Event::Mouse(_mouse_event) => EventPropagation::Ignore(None),
+            _ => EventPropagation::Ignore(None),
         }
-
-        EventPropagation::Ignore(None)
     }
 
-    fn cursor(&self, area: Rect, context: &mut Editor) -> Option<Position> {
-        if let Some(window) = context.windows.get_focused() {
-            let buffer = context.buffers.get(window.buffer_id).unwrap();
-            Some(
-                buffer
-                    .get_cursor(window.id)
-                    .unwrap()
-                    .to_screen_position(buffer.content()),
-            )
-        } else {
-            None
-        }
+    fn cursor(&self, _area: Rect, context: &mut Editor) -> Option<Position> {
+        context.cursor()
     }
 
     fn render(
@@ -99,6 +125,45 @@ impl Component for EditorView {
         area: Rect,
         context: &mut crate::components::Context,
     ) {
-        todo!()
+        use ratatui::prelude::*;
+
+        // render text lines
+        let editor = &context.editor;
+        let window = editor.windows.get_focused().unwrap();
+        let buf = editor.buffers.get(window.buffer_id).unwrap();
+
+        let lines = buf
+            .content()
+            .lines()
+            .map(|line| line.to_string())
+            .collect::<String>();
+
+        let cursor = buf.get_cursor(window.id);
+
+        let line_index = buf.content().char_to_line(cursor.range.start);
+
+        let cur_col = width(
+            &buf.content()
+                .slice(buf.content().line_to_char(line_index)..cursor.range.start),
+        );
+
+        let cursor_pos = Span::styled(
+            format!(
+                " {}|{} {}|{} ",
+                line_index + 1,
+                buf.content().len_lines(),
+                cur_col + 1,
+                width(&buf.content().line(line_index)),
+            ),
+            Style::default(),
+        );
+
+        let buffer_layout = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints(vec![Constraint::Percentage(100), Constraint::Length(1)])
+            .split(area);
+
+        f.render_widget(Text::from(lines), buffer_layout[0]);
+        f.render_widget(Text::from(cursor_pos), buffer_layout[1]);
     }
 }

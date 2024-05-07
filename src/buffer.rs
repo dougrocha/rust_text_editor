@@ -95,8 +95,8 @@ impl Buffer {
         &self.content
     }
 
-    pub fn get_cursor(&self, window_id: WindowId) -> Option<&Cursor> {
-        self.cursors.get(&window_id)
+    pub fn get_cursor(&self, window_id: WindowId) -> &Cursor {
+        &self.cursors[&window_id]
     }
 
     pub fn set_cursor(&mut self, window_id: WindowId, cursor: Cursor) {

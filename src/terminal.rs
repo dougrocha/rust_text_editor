@@ -27,15 +27,17 @@ pub fn io() -> IO {
 pub type Frame<'a> = ratatui::Frame<'a>;
 
 pub enum Event {
-    Tick,
-    Render,
     Error,
     FocusGained,
     FocusLost,
-    Paste(String),
     Key(KeyEvent),
     Mouse(MouseEvent),
+    Paste(String),
+    Render,
     Resize(u16, u16),
+    /// Tick duration used for updating ui and other things
+    /// Defaulted to 250ms
+    Tick,
 }
 
 pub struct Terminal {
@@ -52,8 +54,9 @@ pub struct Terminal {
 
 impl Terminal {
     pub fn new() -> Result<Self> {
-        let tick_rate = 4.0;
+        let tick_rate = 250.0;
         let frame_rate = 60.0;
+
         let terminal = ratatui::Terminal::new(Backend::new(io()))?;
         let (event_tx, event_rx) = mpsc::unbounded_channel();
         let cancellation_token = CancellationToken::new();
@@ -94,7 +97,7 @@ impl Terminal {
     }
 
     pub fn start(&mut self) {
-        let tick_delay = std::time::Duration::from_secs_f64(1.0 / self.tick_rate);
+        let tick_delay = std::time::Duration::from_millis(250);
         let render_delay = std::time::Duration::from_secs_f64(1.0 / self.frame_rate);
         self.cancel();
         self.cancellation_token = CancellationToken::new();

@@ -52,13 +52,13 @@ impl Components {
                 EventPropagation::Ignore(Some(cb)) => {
                     callbacks.push(cb);
                 }
-                EventPropagation::Stop(Some(cb)) => {
+                EventPropagation::Consume(Some(cb)) => {
                     callbacks.push(cb);
                     stop_propagation = true;
                     break;
                 }
                 EventPropagation::Ignore(None) => {}
-                EventPropagation::Stop(None) => {
+                EventPropagation::Consume(None) => {
                     stop_propagation = true;
                 }
             }
@@ -89,7 +89,7 @@ type EventCallback = Box<dyn FnOnce(&mut Components, &mut Context)>;
 
 pub enum EventPropagation {
     Ignore(Option<EventCallback>),
-    Stop(Option<EventCallback>),
+    Consume(Option<EventCallback>),
 }
 
 pub struct Position {
@@ -108,7 +108,7 @@ pub trait Component {
         EventPropagation::Ignore(None)
     }
 
-    fn cursor(&self, _area: Rect, _contextt: &mut Editor) -> Option<Position> {
+    fn cursor(&self, _area: Rect, _context: &mut Editor) -> Option<Position> {
         None
     }
     /// Render the component on the screen. (REQUIRED)
@@ -123,17 +123,4 @@ pub trait Component {
     ///
     /// * `Result<()>` - An Ok result or an error.
     fn render(&self, f: &mut Frame<'_>, area: Rect, context: &mut Context);
-
-    /// Name of type
-    fn type_name(&self) -> &'static str {
-        std::any::type_name::<Self>()
-    }
-
-    /// Id of component
-    ///
-    /// Useful in determining what component this is
-    #[doc(hidden)]
-    fn id(&self, _test: u32) -> Option<&'static str> {
-        None
-    }
 }
