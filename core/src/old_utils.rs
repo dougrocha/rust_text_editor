@@ -12,9 +12,9 @@ use tracing_subscriber::{
 const VERSION_MESSAGE: &str = concat!(
     env!("CARGO_PKG_VERSION"),
     "-",
-    env!("VERGEN_GIT_DESCRIBE"),
-    " (",
-    env!("VERGEN_BUILD_DATE"),
+    //env!("VERGEN_GIT_DESCRIBE"),
+    //" (",
+    //env!("VERGEN_BUILD_DATE"),
     ")"
 );
 

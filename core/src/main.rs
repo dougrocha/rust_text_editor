@@ -11,19 +11,15 @@ pub mod text;
 pub mod utils;
 pub mod window;
 
+use app::App;
 use clap::Parser;
 use cli::Args;
 use color_eyre::eyre::Result;
-
-use crate::{
-    app::App,
-    utils::{initialize_logging, initialize_panic_handler},
-};
+use utils::{setup_logging, setup_panic_handler};
 
 async fn tokio_main() -> Result<()> {
-    initialize_logging()?;
-
-    initialize_panic_handler()?;
+    setup_logging()?;
+    setup_panic_handler()?;
 
     let args = Args::parse();
 

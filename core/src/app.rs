@@ -107,8 +107,6 @@ impl App {
             editor: &mut self.editor,
         };
 
-        frame_context.editor.needs_redraw = false;
-
         let _ = self.terminal.draw(|frame| {
             self.components.render(frame, &mut frame_context);
             if let Some(position) = self.components.cursor(frame, &mut frame_context) {

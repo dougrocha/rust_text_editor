@@ -2,7 +2,7 @@ use std::{fs::File, io::BufReader, path::Path};
 
 use color_eyre::eyre::Result;
 use crossterm::event::{KeyCode, KeyEvent};
-use ratatui::layout::Rect;
+use ratatui::{layout::Rect, widgets::Paragraph};
 use ropey::Rope;
 
 use crate::{
@@ -16,7 +16,6 @@ use crate::{
 
 pub struct Editor {
     pub mode: Mode,
-    pub needs_redraw: bool,
     pub buffers: Buffers,
     pub windows: Windows,
     should_quit: bool,
@@ -26,7 +25,6 @@ impl Editor {
     pub fn new(area: Rect) -> Self {
         Self {
             mode: Mode::Normal,
-            needs_redraw: false,
             windows: Windows::new(area),
             buffers: Buffers::new(),
             should_quit: false,
@@ -68,7 +66,10 @@ impl Editor {
             width(&line_to_cursor)
         };
 
-        Some(Position { x, y })
+        Some(Position {
+            x: x - focused_window.offset.horizontal,
+            y: y - focused_window.offset.vertical,
+        })
     }
 }
 
@@ -89,14 +90,40 @@ impl EditorView {
             editor: context.editor,
         };
 
-        match event.code {
-            KeyCode::Char('q') => context.editor.should_quit = true,
-            KeyCode::Char('l') => text::move_right(&mut event_context),
-            KeyCode::Char('h') => text::move_left(&mut event_context),
-            KeyCode::Char('j') => text::move_down(&mut event_context),
-            KeyCode::Char('k') => text::move_up(&mut event_context),
-            _ => {}
+        match event_context.editor.mode {
+            Mode::Normal => match event.code {
+                KeyCode::Char('q') => event_context.editor.should_quit = true,
+                KeyCode::Char('l') => text::move_right(&mut event_context),
+                KeyCode::Char('h') => text::move_left(&mut event_context),
+                KeyCode::Char('j') => text::move_down(&mut event_context),
+                KeyCode::Char('k') => text::move_up(&mut event_context),
+                KeyCode::Char('i') => event_context.editor.mode = Mode::Insert,
+                KeyCode::Char('0') => text::goto_start_of_line(&mut event_context),
+                KeyCode::Char('$') => text::goto_end_of_line(&mut event_context),
+                //KeyCode::Char('w') => text::move_word_forward(&mut event_context),
+                //KeyCode::Char('b') => text::move_word_backward(&mut event_context),
+                //KeyCode::Char(num @ ('1' | '2' | '3' | '4' | '5' | '6' | '7' | '8' | '9')) => {
+                // user this number to prefix commands
+                //}
+                KeyCode::Esc => todo!(),
+                _ => {
+                    tracing::debug!("getting key");
+                }
+            },
+            Mode::Insert => match event.code {
+                KeyCode::Char(char) => text::insert_char(&mut event_context, char),
+                KeyCode::Enter => text::insert_new_line(&mut event_context),
+                KeyCode::Backspace => text::delete_char(&mut event_context),
+                KeyCode::Esc => event_context.editor.mode = Mode::Normal,
+                _ => {}
+            },
+            Mode::Visual => todo!(),
+            Mode::Search => todo!(),
         }
+
+        let window = event_context.editor.windows.get_focused_mut().unwrap();
+        let buf = event_context.editor.buffers.get(window.buffer_id).unwrap();
+        window.position_cursor_in_view(buf, 12);
 
         EventPropagation::Consume(None)
     }
@@ -127,43 +154,54 @@ impl Component for EditorView {
     ) {
         use ratatui::prelude::*;
 
-        // render text lines
         let editor = &context.editor;
         let window = editor.windows.get_focused().unwrap();
         let buf = editor.buffers.get(window.buffer_id).unwrap();
 
-        let lines = buf
-            .content()
-            .lines()
-            .map(|line| line.to_string())
-            .collect::<String>();
+        let content = &buf.content();
+
+        let mut text_area: Vec<Line> = vec![];
+        for line in content.lines_at(window.offset.vertical) {
+            match line.get_slice(window.offset.horizontal..) {
+                Some(str) => {
+                    text_area.push(Line::from(str.to_string()));
+                }
+                None => {
+                    text_area.push(Line::from(""));
+                }
+            }
+        }
 
         let cursor = buf.get_cursor(window.id);
 
-        let line_index = buf.content().char_to_line(cursor.range.start);
+        let line_index = content.char_to_line(cursor.range.start);
 
-        let cur_col = width(
-            &buf.content()
-                .slice(buf.content().line_to_char(line_index)..cursor.range.start),
-        );
+        let mode = Span::from(editor.mode.to_string());
 
-        let cursor_pos = Span::styled(
-            format!(
-                " {}|{} {}|{} ",
-                line_index + 1,
-                buf.content().len_lines(),
-                cur_col + 1,
-                width(&buf.content().line(line_index)),
-            ),
-            Style::default(),
-        );
+        let line_info = format!(
+            " {:>2}|{:<2} {:>2}|{:<2} ",
+            line_index + 1,
+            buf.content().len_lines(),
+            width(&content.slice(content.line_to_char(line_index)..cursor.range.start)) + 1,
+            width(&content.line(line_index)),
+        )
+        .fg(Color::Black)
+        .bg(Color::Rgb(235, 188, 186));
 
         let buffer_layout = Layout::default()
             .direction(Direction::Vertical)
             .constraints(vec![Constraint::Percentage(100), Constraint::Length(1)])
             .split(area);
 
-        f.render_widget(Text::from(lines), buffer_layout[0]);
-        f.render_widget(Text::from(cursor_pos), buffer_layout[1]);
+        let space = Span::from(format!(
+            "{:>w$}",
+            "",
+            w = buffer_layout[1].width as usize - line_info.width() - mode.width()
+        ));
+
+        let status_line = Line::from(vec![mode, space, line_info]).bg(Color::Rgb(31, 29, 46));
+
+        f.render_widget(Paragraph::new(text_area), buffer_layout[0]);
+        f.render_widget(status_line, buffer_layout[1]);
     }
 }

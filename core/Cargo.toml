@@ -1,0 +1,39 @@
+[package]
+name = "core"
+version = "0.1.0"
+description = "core of my text editor"
+edition.workspace = true
+
+[dependencies]
+better-panic = "0.3.0"
+clap = { version = "4.5.4", features = [
+  "derive",
+  "cargo",
+  "wrap_help",
+  "unicode",
+  "string",
+  "unstable-styles",
+] }
+color-eyre = "0.6.3"
+crossterm = { version = "0.27.0", features = ["serde", "event-stream"] }
+futures = "0.3.30"
+human-panic = "2.0.0"
+json5 = "0.4.1"
+lazy_static = "1.4.0"
+log = "0.4.21"
+pretty_assertions = "1.4.0"
+ratatui = { version = "0.26.2", features = ["serde", "macros"] }
+ropey = "1.6.1"
+serde = { version = "1.0.198", features = ["derive"] }
+serde_json = "1.0.116"
+signal-hook = "0.3.17"
+strip-ansi-escapes = "0.2.0"
+tokio = { version = "1.37.0", features = ["full"] }
+tokio-util = "0.7.10"
+tracing = "0.1.40"
+tracing-error = "0.2.0"
+tracing-subscriber = { version = "0.3.18", features = ["env-filter", "serde"] }
+tree-sitter = "0.22"
+tree-sitter-rust = "0.21"
+unicode-segmentation = "1.11.0"
+unicode-width = "0.1.12"

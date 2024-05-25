@@ -95,6 +95,10 @@ impl Buffer {
         &self.content
     }
 
+    pub fn content_mut(&mut self) -> &mut Rope {
+        &mut self.content
+    }
+
     pub fn get_cursor(&self, window_id: WindowId) -> &Cursor {
         &self.cursors[&window_id]
     }

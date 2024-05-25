@@ -60,6 +60,7 @@ impl Components {
                 EventPropagation::Ignore(None) => {}
                 EventPropagation::Consume(None) => {
                     stop_propagation = true;
+                    break;
                 }
             }
         }
