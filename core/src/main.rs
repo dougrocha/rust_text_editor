@@ -7,7 +7,7 @@ pub mod cursor;
 pub mod editor;
 pub mod mode;
 pub mod terminal;
-pub mod text;
+pub mod movements;
 pub mod utils;
 pub mod window;
 

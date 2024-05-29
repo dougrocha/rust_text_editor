@@ -1,10 +1,16 @@
 [package]
-name = "core"
+name = "rust-text-editor"
 version = "0.1.0"
 description = "core of my text editor"
 edition.workspace = true
 
+[build-dependencies]
+cc = "*"
+
 [dependencies]
+syntax = { path = "../syntax" }
+text = { path = "../text" }
+
 better-panic = "0.3.0"
 clap = { version = "4.5.4", features = [
   "derive",

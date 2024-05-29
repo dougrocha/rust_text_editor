@@ -1,8 +1,10 @@
+use ratatui::widgets::Widget;
 use ropey::{Rope, RopeSlice};
 use std::{
     collections::HashMap,
     path::{Path, PathBuf},
 };
+use syntax::Highlight;
 
 use crate::{cursor::Cursor, window::WindowId};
 
@@ -71,22 +73,27 @@ pub struct Buffer {
     content: Rope,
     cursors: HashMap<WindowId, Cursor>,
     file_path: Option<PathBuf>,
+    pub highlight: Highlight,
 }
 
 impl Buffer {
     pub fn new(id: BufferId, content: Rope, file_path: Option<&Path>) -> Self {
+        let highlight = Highlight::new(content.slice(..));
+
         match file_path {
             Some(file_path) => Self {
                 id,
                 content,
                 cursors: HashMap::default(),
                 file_path: Some(file_path.to_path_buf()),
+                highlight,
             },
             None => Self {
                 id,
                 content,
                 cursors: HashMap::default(),
                 file_path: None,
+                highlight,
             },
         }
     }

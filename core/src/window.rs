@@ -1,11 +1,11 @@
 use std::cmp;
 
 use ratatui::layout::Rect;
+use text::width;
 
 use crate::{
     buffer::{Buffer, BufferId},
     cursor::Cursor,
-    text,
 };
 
 #[derive(Default)]
@@ -67,7 +67,7 @@ impl Windows {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Copy, Clone)]
 pub struct Offset {
     pub vertical: usize,
     pub horizontal: usize,
@@ -114,17 +114,17 @@ impl Window {
         let x = {
             let cur_line_index = content.line_to_char(y);
             let line_to_cursor = content.slice(cur_line_index..cursor);
-            text::width(&line_to_cursor)
+            width(&line_to_cursor)
         };
 
-        let width = (self.area.width as usize).saturating_sub(1);
-        let cur_line_width = text::width(&content.line(y));
+        let screen_width = (self.area.width as usize).saturating_sub(1);
+        let cur_line_width = width(&content.line(y));
 
         self.offset.horizontal = cmp::min(self.offset.horizontal, x.saturating_sub(scrolloff));
-        if x >= self.offset.horizontal + width.saturating_sub(scrolloff)
-            && cur_line_width != (self.offset.horizontal + width)
+        if x >= self.offset.horizontal + screen_width.saturating_sub(scrolloff)
+            && cur_line_width != (self.offset.horizontal + screen_width)
         {
-            self.offset.horizontal = x.saturating_sub(width.saturating_sub(scrolloff)) + 1;
+            self.offset.horizontal = x.saturating_sub(screen_width.saturating_sub(scrolloff)) + 1;
         }
     }
 }

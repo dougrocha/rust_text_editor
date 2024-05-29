@@ -283,37 +283,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "core"
-version = "0.1.0"
-dependencies = [
- "better-panic",
- "clap",
- "color-eyre",
- "crossterm",
- "futures",
- "human-panic",
- "json5",
- "lazy_static",
- "log",
- "pretty_assertions",
- "ratatui",
- "ropey",
- "serde",
- "serde_json",
- "signal-hook",
- "strip-ansi-escapes",
- "tokio",
- "tokio-util",
- "tracing",
- "tracing-error",
- "tracing-subscriber",
- "tree-sitter",
- "tree-sitter-rust",
- "unicode-segmentation",
- "unicode-width",
-]
-
-[[package]]
 name = "cpufeatures"
 version = "0.2.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -957,6 +926,40 @@ dependencies = [
 ]
 
 [[package]]
+name = "rust-text-editor"
+version = "0.1.0"
+dependencies = [
+ "better-panic",
+ "cc",
+ "clap",
+ "color-eyre",
+ "crossterm",
+ "futures",
+ "human-panic",
+ "json5",
+ "lazy_static",
+ "log",
+ "pretty_assertions",
+ "ratatui",
+ "ropey",
+ "serde",
+ "serde_json",
+ "signal-hook",
+ "strip-ansi-escapes",
+ "syntax",
+ "text",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "tracing-error",
+ "tracing-subscriber",
+ "tree-sitter",
+ "tree-sitter-rust",
+ "unicode-segmentation",
+ "unicode-width",
+]
+
+[[package]]
 name = "rustc-demangle"
 version = "0.1.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1181,6 +1184,13 @@ dependencies = [
 [[package]]
 name = "syntax"
 version = "0.1.0"
+dependencies = [
+ "ratatui",
+ "ropey",
+ "text",
+ "tree-sitter",
+ "tree-sitter-rust",
+]
 
 [[package]]
 name = "terminal_size"
@@ -1190,6 +1200,15 @@ checksum = "21bebf2b7c9e0a515f6e0f8c51dc0f8e4696391e6f1ff30379559f8365fb0df7"
 dependencies = [
  "rustix",
  "windows-sys 0.48.0",
+]
+
+[[package]]
+name = "text"
+version = "0.1.0"
+dependencies = [
+ "ropey",
+ "unicode-segmentation",
+ "unicode-width",
 ]
 
 [[package]]
