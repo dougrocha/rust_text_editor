@@ -18,6 +18,7 @@ use crate::{
     cursor::Cursor,
     mode::Mode,
     movements,
+    prompt::CommandPrompt,
     terminal::Event,
     window::{Offset, Windows},
 };
@@ -104,13 +105,17 @@ impl EditorView {
                 KeyCode::Char('i') => event_context.editor.mode = Mode::Insert,
                 KeyCode::Char('0') => movements::goto_start_of_line(&mut event_context),
                 KeyCode::Char('$') => movements::goto_end_of_line(&mut event_context),
-                KeyCode::Char(':') => event_context.editor.mode = Mode::Command,
+                KeyCode::Char(':') => {
+                    return EventPropagation::Consume(Some(Box::new(|components, context| {
+                        context.editor.mode = Mode::Command;
+                        components.push(Box::new(CommandPrompt::new()));
+                    })));
+                }
                 //KeyCode::Char('w') => text::move_word_forward(&mut event_context),
                 //KeyCode::Char('b') => text::move_word_backward(&mut event_context),
                 //KeyCode::Char(num @ ('1' | '2' | '3' | '4' | '5' | '6' | '7' | '8' | '9')) => {
                 // user this number to prefix commands
                 //}
-                KeyCode::Esc => todo!(),
                 _ => {
                     tracing::debug!("getting key");
                 }
@@ -155,18 +160,10 @@ impl Component for EditorView {
     fn render(
         &self,
         f: &mut crate::terminal::Frame<'_>,
-        area: Rect,
+        _area: Rect,
         context: &mut crate::components::Context,
     ) {
         let editor = &context.editor;
-        // let windows_count = editor.windows.count() as u16;
-        //
-        // let constraints: Vec<Constraint> = (0..windows_count)
-        //     .map(|_| Constraint::Percentage(100 / windows_count))
-        //     .collect();
-        //
-        // // split the top layout into sections for each buffer to sit in
-        // let editor_layout = Layout::horizontal(constraints).split(area);
 
         for window in editor.windows.iter() {
             let buf = editor.buffers.get(window.buffer_id).unwrap();

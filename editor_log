@@ -1,0 +1,6 @@
+  [2m2024-11-10T07:49:26.919412Z[0m [34mDEBUG[0m  [34mgetting key[0m
+    [2;3mat[0m core\src\prompt.rs:38 [2;3mon[0m ThreadId(1)
+
+  [2m2024-11-10T07:51:41.130889Z[0m [34mDEBUG[0m  [34mgetting key[0m
+    [2;3mat[0m core\src\editor.rs:120 [2;3mon[0m ThreadId(1)
+

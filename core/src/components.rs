@@ -30,6 +30,10 @@ impl Components {
         self.components.push(component);
     }
 
+    pub fn pop(&mut self) {
+        self.components.pop();
+    }
+
     pub fn cursor(&self, frame: &mut Frame<'_>, context: &mut Context) -> Option<Position> {
         for component in self.components.iter().rev() {
             if let Some(cursor) = component.cursor(frame.size(), context.editor) {
