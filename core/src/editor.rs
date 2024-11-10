@@ -3,8 +3,9 @@ use std::{fs::File, io::BufReader, path::Path};
 use color_eyre::eyre::Result;
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
-    layout::Rect,
-    style::{Color, Style},
+    layout::{Constraint, Direction, Layout, Rect},
+    style::{Color, Style, Stylize},
+    text::{Line, Span},
     widgets::Widget,
 };
 use ropey::{Rope, RopeSlice};
@@ -13,7 +14,7 @@ use text::width;
 
 use crate::{
     buffer::{BufferId, Buffers},
-    components::{self, Component, EventPropagation, Position},
+    components::{self, Component, Context, EventPropagation, Position},
     cursor::Cursor,
     mode::Mode,
     movements,
@@ -65,13 +66,13 @@ impl Editor {
         let content = buf.content();
 
         let cursor = buf.get_cursor(focused_window.id);
-        let y = content.char_to_line(cursor.range.start);
+        let y = content.char_to_line(cursor.range.start) + focused_window.area.y as usize;
 
         let x = {
             let cur_line_index = content.line_to_char(y);
             let line_to_cursor = content.slice(cur_line_index..cursor.range.start);
             width(&line_to_cursor)
-        };
+        } + focused_window.area.x as usize;
 
         Some(Position {
             x: x - focused_window.offset.horizontal,
@@ -88,12 +89,8 @@ impl EditorView {
         Self {}
     }
 
-    fn handle_key_events(
-        &mut self,
-        event: &KeyEvent,
-        context: &mut components::Context,
-    ) -> EventPropagation {
-        let mut event_context: movements::Context = movements::Context {
+    fn handle_key_events(&mut self, event: &KeyEvent, context: &mut Context) -> EventPropagation {
+        let mut event_context = Context {
             editor: context.editor,
         };
 
@@ -107,6 +104,7 @@ impl EditorView {
                 KeyCode::Char('i') => event_context.editor.mode = Mode::Insert,
                 KeyCode::Char('0') => movements::goto_start_of_line(&mut event_context),
                 KeyCode::Char('$') => movements::goto_end_of_line(&mut event_context),
+                KeyCode::Char(':') => event_context.editor.mode = Mode::Command,
                 //KeyCode::Char('w') => text::move_word_forward(&mut event_context),
                 //KeyCode::Char('b') => text::move_word_backward(&mut event_context),
                 //KeyCode::Char(num @ ('1' | '2' | '3' | '4' | '5' | '6' | '7' | '8' | '9')) => {
@@ -126,6 +124,7 @@ impl EditorView {
             },
             Mode::Visual => todo!(),
             Mode::Search => todo!(),
+            _ => {}
         }
 
         let window = event_context.editor.windows.get_focused_mut().unwrap();
@@ -159,70 +158,64 @@ impl Component for EditorView {
         area: Rect,
         context: &mut crate::components::Context,
     ) {
-        use ratatui::prelude::*;
-
         let editor = &context.editor;
-        let window = editor.windows.get_focused().unwrap();
-        let buf = editor.buffers.get(window.buffer_id).unwrap();
+        // let windows_count = editor.windows.count() as u16;
+        //
+        // let constraints: Vec<Constraint> = (0..windows_count)
+        //     .map(|_| Constraint::Percentage(100 / windows_count))
+        //     .collect();
+        //
+        // // split the top layout into sections for each buffer to sit in
+        // let editor_layout = Layout::horizontal(constraints).split(area);
 
-        let content = buf.content().slice(..);
+        for window in editor.windows.iter() {
+            let buf = editor.buffers.get(window.buffer_id).unwrap();
 
-        let cursor = buf.get_cursor(window.id);
-        let line_index = content.char_to_line(cursor.range.start);
+            let buf_layout = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints(vec![Constraint::Percentage(100), Constraint::Length(2)])
+                .split(window.area);
 
-        let mode = Span::from(editor.mode.to_string());
+            let window = editor.windows.get_by_buffer_id(buf.id).unwrap();
+            let content = buf.content().slice(..);
 
-        let line_info = format!(
-            " {:>2}|{:<2} {:>2}|{:<2} ",
-            line_index + 1,
-            buf.content().len_lines(),
-            width(&content.slice(content.line_to_char(line_index)..cursor.range.start)) + 1,
-            width(&content.line(line_index)),
-        )
-        .fg(Color::Black)
-        .bg(Color::Rgb(235, 188, 186));
+            let cursor = buf.get_cursor(window.id);
+            let range = {
+                let last_line = content.len_lines().saturating_sub(1);
+                let last_visible_line = (window.offset.vertical + window.area.height as usize)
+                    .saturating_sub(1)
+                    .min(last_line);
 
-        let buffer_layout = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints(vec![Constraint::Percentage(100), Constraint::Length(1)])
-            .split(area);
+                let start = content.line_to_byte(window.offset.vertical.min(last_line));
+                let end = content.line_to_byte(last_visible_line + 1);
+                start..end
+            };
+            let colors = buf.highlight.colors(content.slice(..), range.clone());
 
-        let space = Span::from(format!(
-            "{:>w$}",
-            "",
-            w = buffer_layout[1].width as usize - line_info.width() - mode.width()
-        ));
+            let status_line = StatusLine {
+                content,
+                cursor,
+                mode: editor.mode,
+            };
 
-        let status_line = Line::from(vec![mode, space, line_info]).bg(Color::Rgb(31, 29, 46));
+            let text = RenderableText {
+                content,
+                colors,
+                offset: window.offset,
+                _cursor: cursor,
+            };
 
-        let range = {
-            let last_line = content.len_lines().saturating_sub(1);
-            let last_visible_line = (window.offset.vertical + window.area.height as usize)
-                .saturating_sub(1)
-                .min(last_line);
-
-            let start = content.line_to_byte(window.offset.vertical.min(last_line));
-            let end = content.line_to_byte(last_visible_line + 1);
-            start..end
-        };
-        let colors = buf.highlight.colors(content.slice(..), range.clone());
-
-        let text = RenderableText {
-            content,
-            colors,
-            cursor,
-            offset: window.offset,
-        };
-
-        f.render_widget(text, buffer_layout[0]);
-        f.render_widget(status_line, buffer_layout[1]);
+            // TODO: Handle other buffer/windows if included
+            f.render_widget(text, buf_layout[0]);
+            f.render_widget(status_line, buf_layout[1]);
+        }
     }
 }
 
 struct RenderableText<'a> {
     content: RopeSlice<'a>,
     colors: Vec<HighlightInfo>,
-    cursor: &'a Cursor,
+    _cursor: &'a Cursor,
     offset: Offset,
 }
 
@@ -254,6 +247,10 @@ impl Widget for RenderableText<'_> {
                 continue;
             }
 
+            if x >= area.width {
+                continue;
+            }
+
             if let Some(c) = self
                 .colors
                 .iter()
@@ -264,7 +261,7 @@ impl Widget for RenderableText<'_> {
                 style = style.fg(Color::White);
             }
 
-            buf.set_string(x, y, char.to_string(), style);
+            buf.set_string(x + area.x, y + area.y, char.to_string(), style);
 
             x += 1;
         }
@@ -301,5 +298,50 @@ impl Widget for RenderableText<'_> {
         //
         //    text.push_line(render_line);
         //}
+    }
+}
+
+struct StatusLine<'a> {
+    content: RopeSlice<'a>,
+    cursor: &'a Cursor,
+    mode: Mode,
+}
+
+impl Widget for StatusLine<'_> {
+    fn render(self, area: Rect, buf: &mut ratatui::prelude::Buffer)
+    where
+        Self: Sized,
+    {
+        buf.set_style(area, Style::default().bg(Color::Rgb(31, 29, 46)));
+
+        let content = self.content;
+        let line_index = content.char_to_line(self.cursor.range.start);
+
+        let line_info = format!(
+            " {:>2}|{:<2} {:>2}|{:<2} ",
+            line_index + 1,
+            content.len_lines(),
+            width(&content.slice(content.line_to_char(line_index)..self.cursor.range.start)) + 1,
+            width(&content.line(line_index)),
+        )
+        .fg(Color::Black)
+        .bg(Color::Rgb(235, 188, 186));
+
+        let buffer_layout = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints(vec![Constraint::Percentage(100), Constraint::Length(1)])
+            .split(area);
+
+        let mode = Span::from(self.mode.to_string());
+
+        let space = Span::from(format!(
+            "{:>w$}",
+            "",
+            w = buffer_layout[1].width as usize - line_info.width() - mode.width()
+        ));
+
+        let status_line = Line::from(vec![space, mode, line_info]);
+
+        buf.set_line(area.x, area.y, &status_line, area.width);
     }
 }

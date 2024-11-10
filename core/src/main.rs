@@ -6,8 +6,9 @@ pub mod config;
 pub mod cursor;
 pub mod editor;
 pub mod mode;
-pub mod terminal;
 pub mod movements;
+pub mod prompt;
+pub mod terminal;
 pub mod utils;
 pub mod window;
 

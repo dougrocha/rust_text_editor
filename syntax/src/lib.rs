@@ -13,7 +13,7 @@ const CANCELLATION_CHECK_INTERVAL: usize = 100;
 enum Error {
     Cancelled,
     InvalidLanguage,
-    Unknown,
+    _Unknown,
 }
 
 // Adapter to convert rope chunks to bytes
@@ -52,6 +52,7 @@ pub struct Highlight {
 }
 
 impl Highlight {
+    // TODO: Handle files that arent rust
     pub fn new(content: RopeSlice) -> Self {
         let query = Query::new(
             &tree_sitter_rust::language(),

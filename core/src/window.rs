@@ -1,6 +1,6 @@
 use std::cmp;
 
-use ratatui::layout::Rect;
+use ratatui::layout::{Constraint, Layout, Rect};
 use text::width;
 
 use crate::{
@@ -29,6 +29,8 @@ impl Windows {
         // when adding multiple windows, eventually handle different sizes with layout
         let id = WindowId(self.nodes.len());
         self.nodes.push(Window::new(id, buffer_id, self.area));
+
+        self.reorder_window_size();
 
         id
     }
@@ -65,6 +67,32 @@ impl Windows {
     pub fn is_empty(&self) -> bool {
         self.nodes.is_empty()
     }
+
+    pub fn count(&self) -> usize {
+        self.nodes.len()
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = &Window> {
+        self.nodes.iter()
+    }
+
+    pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut Window> {
+        self.nodes.iter_mut()
+    }
+
+    pub fn reorder_window_size(&mut self) {
+        let window_count = self.count() as u16;
+        let constraints: Vec<Constraint> = (0..window_count)
+            .map(|_| Constraint::Percentage(100 / window_count))
+            .collect();
+
+        let window_layout = Layout::horizontal(constraints).split(self.area);
+
+        for (i, window) in &mut self.nodes.iter_mut().enumerate() {
+            let area = window_layout[i];
+            window.set_area(area);
+        }
+    }
 }
 
 #[derive(Default, Copy, Clone)]
@@ -94,6 +122,10 @@ impl Window {
             area,
             cursor: Cursor::default(),
         }
+    }
+
+    pub fn set_area(&mut self, area: Rect) {
+        self.area = area;
     }
 
     pub fn position_cursor_in_view(&mut self, buf: &Buffer, scrolloff: usize) {

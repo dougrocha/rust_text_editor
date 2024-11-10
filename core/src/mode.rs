@@ -6,6 +6,7 @@ pub enum Mode {
     Insert,
     Visual,
     Search,
+    Command,
 }
 
 impl fmt::Display for Mode {
@@ -15,6 +16,7 @@ impl fmt::Display for Mode {
             Mode::Insert => write!(f, "INSERT"),
             Mode::Visual => write!(f, "VISUAL"),
             Mode::Search => write!(f, "SEARCH"),
+            Mode::Command => write!(f, "COMMAND"),
         }
     }
 }

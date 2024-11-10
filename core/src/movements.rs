@@ -5,12 +5,7 @@ use text::{
     prev_grapheme_boundary_nth, width,
 };
 
-use crate::{cursor::Cursor, editor::Editor};
-
-// eventually keep track of multiple keypress and if a number was inserted before
-pub struct Context<'a> {
-    pub editor: &'a mut Editor,
-}
+use crate::{components::Context, cursor::Cursor};
 
 pub fn move_right_nth(context: &mut Context, count: usize) {
     let focused_window = context.editor.windows.get_focused().unwrap();
@@ -192,6 +187,7 @@ pub fn goto_start_of_line(context: &mut Context) {
     buf.set_cursor(focused_window.id, cursor)
 }
 
+#[inline]
 pub fn goto_end_of_line(context: &mut Context) {
     let focused_window = context.editor.windows.get_focused().unwrap();
     let buf = context

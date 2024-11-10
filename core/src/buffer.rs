@@ -1,4 +1,3 @@
-use ratatui::widgets::Widget;
 use ropey::{Rope, RopeSlice};
 use std::{
     collections::HashMap,
