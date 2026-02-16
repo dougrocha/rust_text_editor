@@ -74,7 +74,7 @@ impl Editor {
             let cur_line_index = content.line_to_char(line_number);
             let line_to_cursor = content.slice(cur_line_index..cursor.range.start);
             width(&line_to_cursor)
-        } + focused_window.area.x as usize;
+        };
 
         Some(Position {
             x: focused_window.area.x as usize + x - focused_window.offset.horizontal,

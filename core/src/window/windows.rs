@@ -33,7 +33,11 @@ impl Windows {
     ) -> WindowId {
         let id = WindowId(self.next_window_id);
         self.next_window_id += 1;
-        let new_window = Window::new(id, buffer_id, self.area);
+
+        // Copy the offset from the target window to the new window
+        let target_offset = self.get(target_id).map(|w| w.offset).unwrap_or_default();
+        let mut new_window = Window::new(id, buffer_id, self.area);
+        new_window.offset = target_offset;
 
         if let Some(root) = self.root.take() {
             self.root = Some(root.split_at(target_id, new_window, split_dir));
@@ -76,14 +80,26 @@ impl Windows {
     /// Closes the window with the given ID
     /// Returns the buffer ID and window ID of the closed window, or None if not found
     pub fn close(&mut self, win_id: WindowId) -> Option<(BufferId, WindowId)> {
-        let buf_id = self.iter().find(|win| win.id == win_id)?.buffer_id;
+        // Find the window to close and its position in iteration order
+        let windows: Vec<WindowId> = self.iter().map(|w| w.id).collect();
+        let closed_position = windows.iter().position(|&id| id == win_id)?;
+        let buf_id = self.get(win_id)?.buffer_id;
 
         let root_node = self.root.take()?;
-
         self.root = root_node.remove_window(win_id);
 
-        let next_win = self.iter().next()?;
-        self.focus(next_win.id);
+        // Focus the previous window, or first if closed was first
+        let window_to_focus = if closed_position > 0 {
+            // Focus the window that was before the closed one
+            windows.get(closed_position - 1).copied()
+        } else {
+            // Closed window was first, focus the new first window
+            self.iter().next().map(|w| w.id)
+        };
+
+        if let Some(focus_id) = window_to_focus {
+            self.focus(focus_id);
+        }
 
         if let Some(root) = self.root.as_mut() {
             root.calculate_layout(self.area);

@@ -38,6 +38,7 @@ impl CommandPrompt {
                             return EventPropagation::Consume(None);
                         };
 
+                        let old_window_id = focused_win.id;
                         let buf_id = focused_win.buffer_id;
                         let cursor = event_context
                             .editor
@@ -53,18 +54,36 @@ impl CommandPrompt {
                             Direction::Horizontal
                         };
 
-                        let window_id =
+                        let new_window_id =
                             event_context
                                 .editor
                                 .windows
-                                .split(focused_win.id, buf_id, direction);
+                                .split(old_window_id, buf_id, direction);
 
                         event_context
                             .editor
                             .buffers
                             .get_mut(buf_id)
                             .unwrap()
-                            .set_cursor(window_id, cursor);
+                            .set_cursor(new_window_id, cursor);
+
+                        // Position the cursor in view for BOTH windows
+                        // After split, both windows show the same buffer but have different areas
+                        let buf = event_context.editor.buffers.get(buf_id).unwrap();
+
+                        // Position cursor for the old (original) window
+                        if let Some(old_window) =
+                            event_context.editor.windows.get_mut(old_window_id)
+                        {
+                            old_window.position_cursor_in_view(buf, 12);
+                        }
+
+                        // Position cursor for the new window
+                        if let Some(new_window) =
+                            event_context.editor.windows.get_mut(new_window_id)
+                        {
+                            new_window.position_cursor_in_view(buf, 12);
+                        }
                     }
                     "close" => {
                         let focused_win = event_context.editor.windows.get_focused();
