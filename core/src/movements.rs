@@ -14,7 +14,7 @@ pub fn move_right_nth(context: &mut Context, count: usize) {
         .buffers
         .get_mut(focused_window.buffer_id)
         .unwrap();
-    let cursor = buf.get_cursor(focused_window.id);
+    let cursor = buf.get_cursor(&focused_window.id);
     let content = &buf.content().slice(..);
 
     let new_start = next_grapheme_boundary_nth(content, cursor.range.start, count);
@@ -40,7 +40,7 @@ pub fn move_up(context: &mut Context) {
         .buffers
         .get_mut(focused_window.buffer_id)
         .unwrap();
-    let cursor = buf.get_cursor(focused_window.id);
+    let cursor = buf.get_cursor(&focused_window.id);
     let content = &buf.content().slice(..);
 
     let cur_line_index = content.char_to_line(cursor.range.start);
@@ -72,7 +72,7 @@ pub fn move_down(context: &mut Context) {
         .buffers
         .get_mut(focused_window.buffer_id)
         .unwrap();
-    let cursor = buf.get_cursor(focused_window.id);
+    let cursor = buf.get_cursor(&focused_window.id);
     let content = &buf.content().slice(..);
 
     let lines_len = content.len_lines().saturating_sub(1);
@@ -106,7 +106,7 @@ pub fn move_left(context: &mut Context) {
         .buffers
         .get_mut(focused_window.buffer_id)
         .unwrap();
-    let cursor = buf.get_cursor(focused_window.id);
+    let cursor = buf.get_cursor(&focused_window.id);
     let content = &buf.content().slice(..);
 
     let new_start = prev_grapheme_boundary_nth(content, cursor.range.start, n);
@@ -125,10 +125,9 @@ pub fn insert_char(context: &mut Context, char: char) {
         .buffers
         .get_mut(focused_window.buffer_id)
         .unwrap();
-    let cursor_pos = buf.get_cursor(focused_window.id).range.start;
+    let cursor_pos = buf.get_cursor(&focused_window.id).range.start;
 
-    let content = buf.content_mut();
-    content.insert_char(cursor_pos, char);
+    buf.insert_char(cursor_pos, char);
 
     move_right(context);
 }
@@ -141,10 +140,9 @@ pub fn insert_new_line(context: &mut Context) {
         .buffers
         .get_mut(focused_window.buffer_id)
         .unwrap();
-    let cursor_pos = buf.get_cursor(focused_window.id).range.start;
+    let cursor_pos = buf.get_cursor(&focused_window.id).range.start;
 
-    let content = buf.content_mut();
-    content.insert_char(cursor_pos, '\n');
+    buf.insert_char(cursor_pos, '\n');
 
     move_down(context);
     goto_start_of_line(context);
@@ -160,9 +158,9 @@ pub fn delete_char(context: &mut Context) {
         .buffers
         .get_mut(focused_window.buffer_id)
         .unwrap();
-    let cursor_pos = buf.get_cursor(focused_window.id).range.start;
+    let cursor_pos = buf.get_cursor(&focused_window.id).range.start;
 
-    buf.content_mut().remove(cursor_pos..cursor_pos + 1);
+    buf.remove(cursor_pos..cursor_pos + 1);
 }
 
 #[inline]
@@ -175,7 +173,7 @@ pub fn goto_start_of_line(context: &mut Context) {
         .unwrap();
 
     let content = &buf.content().slice(..);
-    let cursor_pos = buf.get_cursor(focused_window.id).range.start;
+    let cursor_pos = buf.get_cursor(&focused_window.id).range.start;
 
     let line_index = content.char_to_line(cursor_pos);
     let start_index = content.line_to_char(line_index);
@@ -197,7 +195,7 @@ pub fn goto_end_of_line(context: &mut Context) {
         .unwrap();
 
     let content = &buf.content().slice(..);
-    let cursor_pos = buf.get_cursor(focused_window.id).range.start;
+    let cursor_pos = buf.get_cursor(&focused_window.id).range.start;
 
     let line_index = content.char_to_line(cursor_pos);
     if width(&buf.content().line(line_index)) == 0 {

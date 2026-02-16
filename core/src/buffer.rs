@@ -1,11 +1,35 @@
 use ropey::{Rope, RopeSlice};
 use std::{
     collections::HashMap,
+    ops::Range,
     path::{Path, PathBuf},
 };
-use syntax::Highlight;
+use syntax::{byte_to_point, Highlight};
+use tree_sitter::{InputEdit, Point};
 
 use crate::{cursor::Cursor, window::WindowId};
+
+pub struct EditInfo {
+    pub start_byte: usize,
+    pub old_end_byte: usize,
+    pub new_end_byte: usize,
+    pub start_point: Point,
+    pub old_end_point: Point,
+    pub new_end_point: Point,
+}
+
+impl EditInfo {
+    pub fn to_input_edit(&self) -> InputEdit {
+        InputEdit {
+            start_byte: self.start_byte,
+            old_end_byte: self.old_end_byte,
+            new_end_byte: self.new_end_byte,
+            start_position: self.start_point,
+            old_end_position: self.old_end_point,
+            new_end_position: self.new_end_point,
+        }
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BufferId(usize);
@@ -105,165 +129,113 @@ impl Buffer {
         &mut self.content
     }
 
-    pub fn get_cursor(&self, window_id: WindowId) -> &Cursor {
-        &self.cursors[&window_id]
+    pub fn get_cursor(&self, window_id: &WindowId) -> &Cursor {
+        &self.cursors[window_id]
     }
 
     pub fn set_cursor(&mut self, window_id: WindowId, cursor: Cursor) {
         self.cursors.insert(window_id, cursor);
     }
 
-    pub fn get_line(&self, index: usize) -> Option<RopeSlice> {
+    pub fn remove_cursor(&mut self, window_id: &WindowId) {
+        self.cursors.remove(window_id);
+    }
+
+    pub fn get_line(&self, index: usize) -> Option<RopeSlice<'_>> {
         self.content.get_line(index)
     }
 
-    // pub fn handle_action(&mut self, action: BufferAction) {
-    //     match action {
-    //         BufferAction::Save => {}
-    //         _ => {}
-    // BufferAction::CursorAction { cursor_id, action } => {
-    //     self.handle_cursor_action(cursor_id, action);
-    // }
-    //     }
-    // }
+    pub fn insert_char(&mut self, pos: usize, char: char) {
+        let edit_info = self.build_insert_edit(pos, &char.to_string());
 
-    // pub fn handle_cursor_action(&mut self, cursor_id: CursorId, action: CursorAction) {
-    //     let cursor = &mut self.cursors[cursor_id.0];
-    //
-    //     let content = &self.content;
-    //
-    //     match action {
-    //         CursorAction::Up(n) => {
-    //             cursor.move_up(content, n);
-    //         }
-    //         CursorAction::Down(n) => {
-    //             cursor.move_down(content, n);
-    //         }
-    //         CursorAction::Right(n) => {
-    //             cursor.move_right(content, n);
-    //         }
-    //         CursorAction::Left(n) => {
-    //             cursor.move_left(content, n);
-    //         }
-    //         CursorAction::EndOfLine => cursor.move_to_end_of_line(content),
-    //         CursorAction::StartOfLine => cursor.move_to_start_of_line(content),
-    //         _ => {}
-    //     }
-    //
-    //     // Mutable actions
-    //     let content = &mut self.content;
-    //
-    //     match action {
-    //         CursorAction::InsertChar(character) => {
-    //             cursor.insert_char(content, character);
-    //         }
-    //         CursorAction::InsertNewLine => cursor.insert_newline(content),
-    //         _ => {}
-    //     }
-    // }
+        self.content.insert_char(pos, char);
 
-    // TODO: Move this to window struct
-    // pub fn draw(&self, f: &mut Frame<'_>, context: &Context, window: &Window) -> Result<()> {
-    //     use ratatui::prelude::*;
-    //
-    //     let buffer_layout = Layout::default()
-    //         .direction(Direction::Vertical)
-    //         .constraints(vec![Constraint::Percentage(100), Constraint::Length(1)])
-    //         .split(window.area);
-    //
-    //     // self.draw_lines(f, buffer_layout[0], offset, cursor_id, context)?;
-    //     // self.draw_status_line(f, buffer_layout[1], cursor_id, context)?;
-    //
-    //     Ok(())
-    // }
+        self.highlight
+            .update(self.content.slice(..), Some(&edit_info.to_input_edit()));
+    }
 
-    // fn draw_lines(
-    //     &self,
-    //     f: &mut Frame<'_>,
-    //     area: Rect,
-    //     offset: usize,
-    //     cursor_id: CursorId,
-    //     context: &Context,
-    // ) -> Result<()> {
-    //     use ratatui::prelude::*;
-    //
-    //     let cursor = self.get_cursor(cursor_id);
-    //     let char_index = self.content.char_to_line(cursor.range.start);
-    //
-    //     let start_index = self.content.line_to_char(char_index) + offset;
-    //
-    //     let end_index = if let Ok(end_index) = self.content.try_line_to_char(area.height as usize) {
-    //         end_index
-    //     } else {
-    //         self.content.len_chars()
-    //     };
-    //
-    //     let text = self
-    //         .content
-    //         .slice(start_index..end_index)
-    //         .lines()
-    //         .map(|line| line.to_string())
-    //         .collect::<String>();
-    //
-    //     f.render_widget(Text::from(text), area);
-    //
-    //     Ok(())
-    // }
-    //
-    // pub fn draw_status_line(
-    //     &self,
-    //     f: &mut Frame<'_>,
-    //     area: Rect,
-    //     cursor_id: CursorId,
-    //     context: &Context,
-    // ) -> Result<()> {
-    //     use ratatui::prelude::*;
-    //     let cursor = self.get_cursor(cursor_id);
-    //
-    //     let mode = Span::styled(
-    //         format!(" {} ", context.mode),
-    //         Style::default().bg(Color::Blue).fg(Color::Black),
-    //     );
-    //
-    //     let file_name = Span::styled(
-    //         format!(
-    //             " {} ",
-    //             self.file_path.as_ref().unwrap().to_str().unwrap_or("None")
-    //         ),
-    //         Style::default().fg(Color::Gray),
-    //     );
-    //
-    //     let line_index = self.content.char_to_line(cursor.range.start);
-    //
-    //     let cur_col = text_width(
-    //         &self
-    //             .content
-    //             .slice(self.content.line_to_char(line_index)..cursor.range.start),
-    //     );
-    //
-    //     let cursor_pos = Span::styled(
-    //         format!(
-    //             " {}|{} {}|{} ",
-    //             line_index + 1,
-    //             self.content.len_lines(),
-    //             cur_col + 1,
-    //             text_width(&self.content.line(line_index)),
-    //         ),
-    //         Style::default(),
-    //     );
-    //
-    //     let status_line_layout =
-    //         Layout::horizontal(vec![Constraint::Ratio(1, 2), Constraint::Ratio(1, 2)]).split(area);
-    //
-    //     let left_side = Line::from(vec![mode]).left_aligned().bg(Color::DarkGray);
-    //
-    //     let right_side = Line::from(vec![file_name, cursor_pos])
-    //         .right_aligned()
-    //         .bg(Color::DarkGray);
-    //
-    //     f.render_widget(left_side, status_line_layout[0]);
-    //     f.render_widget(right_side, status_line_layout[1]);
-    //
-    //     Ok(())
-    // }
+    pub fn insert_str(&mut self, pos: usize, text: &str) {
+        let edit_info = self.build_insert_edit(pos, text);
+
+        self.content_mut().insert(pos, text);
+
+        self.highlight
+            .update(self.content.slice(..), Some(&edit_info.to_input_edit()));
+    }
+
+    pub fn remove(&mut self, range: Range<usize>) {
+        let edit_info = self.build_delete_edit(range.start, range.end);
+
+        self.content_mut().remove(range);
+
+        self.highlight
+            .update(self.content.slice(..), Some(&edit_info.to_input_edit()));
+    }
+
+    pub fn replace_range(&mut self, range: Range<usize>, text: &str) {
+        self.content_mut().remove(range.clone());
+
+        let edit_info = self.build_insert_edit(range.start, text);
+        self.content_mut().insert(range.start, text);
+
+        self.highlight
+            .update(self.content.slice(..), Some(&edit_info.to_input_edit()));
+    }
+
+    fn build_insert_edit(&self, char_offset: usize, inserted_text: &str) -> EditInfo {
+        let start_byte = self.content.char_to_byte(char_offset);
+        let old_end_byte = start_byte;
+        let new_end_byte = start_byte + inserted_text.len();
+
+        let start_point = byte_to_point(&self.content.slice(..), start_byte);
+        let old_end_point = start_point;
+
+        // For new_end_point, we need to calculate based on inserted text
+        let new_end_point = if inserted_text.contains('\n') {
+            let lines = inserted_text.lines().count();
+            let last_line = inserted_text.lines().last().unwrap_or("");
+            Point {
+                row: start_point.row + lines - 1,
+                column: if lines > 1 {
+                    last_line.len()
+                } else {
+                    start_point.column + last_line.len()
+                },
+            }
+        } else {
+            Point {
+                row: start_point.row,
+                column: start_point.column + inserted_text.len(),
+            }
+        };
+
+        EditInfo {
+            start_byte,
+            old_end_byte,
+            new_end_byte,
+            start_point,
+            old_end_point,
+            new_end_point,
+        }
+    }
+
+    /// Build EditInfo for a deletion
+    fn build_delete_edit(&self, start_char: usize, end_char: usize) -> EditInfo {
+        let start_byte = self.content.char_to_byte(start_char);
+        let old_end_byte = self.content.char_to_byte(end_char);
+        let new_end_byte = start_byte;
+
+        let start_point = byte_to_point(&self.content.slice(..), start_byte);
+        let old_end_point = byte_to_point(&self.content.slice(..), old_end_byte);
+        let new_end_point = start_point;
+
+        EditInfo {
+            start_byte,
+            old_end_byte,
+            new_end_byte,
+            start_point,
+            old_end_point,
+            new_end_point,
+        }
+    }
 }

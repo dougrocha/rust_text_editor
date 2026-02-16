@@ -4,7 +4,7 @@ pub fn setup_logging() -> Result<()> {
     use tracing_error::ErrorLayer;
     use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, Layer};
 
-    std::env::set_var("RUST_LOG", "debug");
+    unsafe { std::env::set_var("RUST_LOG", "debug") };
 
     let log_path = "./editor_log";
     let log_file = std::fs::File::create(log_path)?;

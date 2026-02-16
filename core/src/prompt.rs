@@ -4,7 +4,7 @@ use crate::{
     terminal::Event,
 };
 use crossterm::event::{KeyCode, KeyEvent};
-use ratatui::{prelude::Rect, style::Style, widgets::Widget};
+use ratatui::{layout::Direction, prelude::Rect, style::Style, widgets::Widget};
 
 #[derive(Default)]
 pub struct CommandPrompt {
@@ -17,7 +17,7 @@ impl CommandPrompt {
     }
 
     fn handle_key_events(&mut self, event: &KeyEvent, context: &mut Context) -> EventPropagation {
-        let _event_context = Context {
+        let event_context = Context {
             editor: context.editor,
         };
 
@@ -29,14 +29,68 @@ impl CommandPrompt {
                 self.input.pop();
             }
             KeyCode::Enter => {
-                // TODO: take command and do something with it
-                todo!();
+                match self.input.as_str() {
+                    "q" => event_context.editor.should_quit = true,
+
+                    "vsplit" | "split" => {
+                        let focused_win = event_context.editor.windows.get_focused();
+                        let Some(focused_win) = focused_win else {
+                            return EventPropagation::Consume(None);
+                        };
+
+                        let buf_id = focused_win.buffer_id;
+                        let cursor = event_context
+                            .editor
+                            .buffers
+                            .get(buf_id)
+                            .unwrap()
+                            .get_cursor(&focused_win.id)
+                            .clone();
+
+                        let direction = if self.input.chars().nth(0).unwrap() == 'v' {
+                            Direction::Vertical
+                        } else {
+                            Direction::Horizontal
+                        };
+
+                        let window_id =
+                            event_context
+                                .editor
+                                .windows
+                                .split(focused_win.id, buf_id, direction);
+
+                        event_context
+                            .editor
+                            .buffers
+                            .get_mut(buf_id)
+                            .unwrap()
+                            .set_cursor(window_id, cursor);
+                    }
+                    "close" => {
+                        let focused_win = event_context.editor.windows.get_focused();
+                        let Some(focused_win) = focused_win else {
+                            return EventPropagation::Consume(None);
+                        };
+
+                        let Some((buf_id, removed_win_id)) =
+                            event_context.editor.windows.close(focused_win.id)
+                        else {
+                            return EventPropagation::Consume(None);
+                        };
+
+                        let buf = event_context.editor.buffers.get_mut(buf_id).unwrap();
+                        buf.remove_cursor(&removed_win_id);
+                    }
+
+                    _ => todo!(),
+                }
+
+                self.input.clear();
+
+                return self.close_prompt();
             }
             KeyCode::Esc => {
-                return EventPropagation::Consume(Some(Box::new(|components, context| {
-                    context.editor.mode = Mode::Normal;
-                    components.pop();
-                })));
+                return self.close_prompt();
             }
             _ => {
                 tracing::debug!("getting key");
@@ -44,6 +98,15 @@ impl CommandPrompt {
         }
 
         EventPropagation::Consume(None)
+    }
+
+    #[inline]
+    /// Close the Command Prompt Window and return to normal mode
+    pub fn close_prompt(&self) -> EventPropagation {
+        EventPropagation::Consume(Some(Box::new(|components, context| {
+            context.editor.mode = Mode::Normal;
+            components.pop();
+        })))
     }
 }
 

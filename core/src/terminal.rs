@@ -184,6 +184,7 @@ impl Terminal {
         if self.paste {
             crossterm::execute!(io(), EnableBracketedPaste)?;
         }
+
         self.start();
         Ok(())
     }

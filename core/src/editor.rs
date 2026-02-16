@@ -27,7 +27,7 @@ pub struct Editor {
     pub mode: Mode,
     pub buffers: Buffers,
     pub windows: Windows,
-    should_quit: bool,
+    pub should_quit: bool,
 }
 
 impl Editor {
@@ -46,7 +46,7 @@ impl Editor {
 
     pub fn open(&mut self, file_path: &Path) -> Result<BufferId> {
         if let Some(buffer_id) = self.buffers.find_by_file_path(file_path) {
-            let window_id = self.windows.add(buffer_id);
+            let window_id = self.windows.add_window(buffer_id);
             self.windows.focus(window_id);
 
             return Ok(buffer_id);
@@ -55,7 +55,7 @@ impl Editor {
         let content = Rope::from_reader(BufReader::new(File::open(file_path)?))?;
 
         let buffer_id = self.buffers.add(content, Some(file_path));
-        let window_id = self.windows.add(buffer_id);
+        let window_id = self.windows.add_window(buffer_id);
         self.windows.focus(window_id);
 
         Ok(buffer_id)
@@ -66,18 +66,19 @@ impl Editor {
         let buf = self.buffers.get(focused_window.buffer_id).unwrap();
         let content = buf.content();
 
-        let cursor = buf.get_cursor(focused_window.id);
-        let y = content.char_to_line(cursor.range.start) + focused_window.area.y as usize;
+        let cursor = buf.get_cursor(&focused_window.id);
+
+        let line_number = content.char_to_line(cursor.range.start);
 
         let x = {
-            let cur_line_index = content.line_to_char(y);
+            let cur_line_index = content.line_to_char(line_number);
             let line_to_cursor = content.slice(cur_line_index..cursor.range.start);
             width(&line_to_cursor)
         } + focused_window.area.x as usize;
 
         Some(Position {
-            x: x - focused_window.offset.horizontal,
-            y: y - focused_window.offset.vertical,
+            x: focused_window.area.x as usize + x - focused_window.offset.horizontal,
+            y: focused_window.area.y as usize + line_number - focused_window.offset.vertical,
         })
     }
 }
@@ -165,18 +166,21 @@ impl Component for EditorView {
     ) {
         let editor = &context.editor;
 
-        for window in editor.windows.iter() {
+        let Some(root) = editor.windows.root() else {
+            return;
+        };
+
+        let buf_layout = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints(vec![Constraint::Percentage(100), Constraint::Length(2)])
+            .split(editor.windows.area());
+
+        for window in root.iter() {
             let buf = editor.buffers.get(window.buffer_id).unwrap();
 
-            let buf_layout = Layout::default()
-                .direction(Direction::Vertical)
-                .constraints(vec![Constraint::Percentage(100), Constraint::Length(2)])
-                .split(window.area);
-
-            let window = editor.windows.get_by_buffer_id(buf.id).unwrap();
             let content = buf.content().slice(..);
 
-            let cursor = buf.get_cursor(window.id);
+            let cursor = buf.get_cursor(&window.id);
             let range = {
                 let last_line = content.len_lines().saturating_sub(1);
                 let last_visible_line = (window.offset.vertical + window.area.height as usize)
@@ -189,30 +193,35 @@ impl Component for EditorView {
             };
             let colors = buf.highlight.colors(content.slice(..), range.clone());
 
-            let status_line = StatusLine {
-                content,
-                cursor,
-                mode: editor.mode,
-            };
-
             let text = RenderableText {
                 content,
                 colors,
                 offset: window.offset,
-                _cursor: cursor,
+                cursor,
             };
 
-            // TODO: Handle other buffer/windows if included
-            f.render_widget(text, buf_layout[0]);
-            f.render_widget(status_line, buf_layout[1]);
+            f.render_widget(text, window.area);
         }
+
+        let focused_win = editor.windows.get_focused().unwrap();
+        let focused_buf = editor.buffers.get(focused_win.buffer_id).unwrap();
+        let cursor = focused_buf.get_cursor(&focused_win.id);
+
+        let content = focused_buf.content().slice(..);
+
+        let status_line = StatusLine {
+            content,
+            cursor,
+            mode: editor.mode,
+        };
+        f.render_widget(status_line, buf_layout[1]);
     }
 }
 
 struct RenderableText<'a> {
     content: RopeSlice<'a>,
     colors: Vec<HighlightInfo>,
-    _cursor: &'a Cursor,
+    cursor: &'a Cursor,
     offset: Offset,
 }
 

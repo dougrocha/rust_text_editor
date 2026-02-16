@@ -5,7 +5,7 @@ use std::ops::Range;
 
 use ratatui::style::Color;
 use ropey::RopeSlice;
-use tree_sitter::{Node, Parser, Query, QueryCursor, TextProvider, Tree};
+use tree_sitter::{InputEdit, Node, Parser, Point, Query, QueryCursor, TextProvider, Tree};
 
 const CANCELLATION_CHECK_INTERVAL: usize = 100;
 
@@ -66,7 +66,7 @@ impl Highlight {
             query,
         };
 
-        highlight.update(content);
+        highlight.update(content, None);
 
         highlight
     }
@@ -75,15 +75,14 @@ impl Highlight {
         self.root.as_ref().unwrap()
     }
 
-    fn update(&mut self, content: RopeSlice) {
+    pub fn update(&mut self, content: RopeSlice, edit: Option<&InputEdit>) {
         let content = content.slice(..);
 
-        match &self.root {
-            Some(_tree) => {}
-            None => {
-                self.parse(content).unwrap();
-            }
+        if let (Some(tree), Some(input_edit)) = (self.root.as_mut(), edit) {
+            tree.edit(input_edit);
         }
+
+        self.parse(content).unwrap()
     }
 
     fn parse(&mut self, content: RopeSlice) -> Result<(), Error> {
@@ -144,6 +143,15 @@ impl Highlight {
 
         colors
     }
+}
+
+pub fn byte_to_point(content: &RopeSlice, byte_offset: usize) -> Point {
+    let char_offset = content.byte_to_char(byte_offset);
+    let line = content.char_to_line(char_offset);
+    let line_start_char = content.line_to_char(line);
+    let column = char_offset - line_start_char;
+
+    Point { row: line, column }
 }
 
 #[cfg(test)]
