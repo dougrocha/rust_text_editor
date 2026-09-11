@@ -260,79 +260,44 @@ impl LayoutNode {
         WindowIterMut { stack: vec![self] }
     }
 
-    /// Counts the number of splits in the given direction (used for grid-based layout)
-    pub fn count_splits(&self, dir: Direction) -> usize {
+    /// Recursively divides `space` among the tree by `ratios`, tiling it exactly with no gaps.
+    pub fn calculate_layout(&mut self, space: Rect) {
         match self {
-            LayoutNode::Leaf { .. } => 1,
+            LayoutNode::Leaf { window } => window.area = space,
             LayoutNode::Container {
                 direction,
                 children,
-                ..
+                ratios,
             } => {
-                if *direction == dir {
-                    children.iter().map(|c| c.count_splits(dir)).sum()
-                } else {
-                    children
-                        .iter()
-                        .map(|c| c.count_splits(dir))
-                        .max()
-                        .unwrap_or(1)
+                if children.is_empty() {
+                    return;
                 }
-            }
-        }
-    }
 
-    /// Calculates and assigns layout rectangles to all windows in the tree
-    pub fn calculate_layout(&mut self, available_space: Rect) {
-        // Calculate the grid dimensions based on maximum splits in each direction
-        let total_cols = self.count_splits(Direction::Vertical);
-        let total_rows = self.count_splits(Direction::Horizontal);
+                let span = match direction {
+                    Direction::Horizontal => space.height,
+                    Direction::Vertical => space.width,
+                };
+                let sizes = split_span(span, children.len(), ratios.as_deref());
 
-        let col_width = available_space.width / total_cols as u16;
-        let row_height = available_space.height / total_rows as u16;
-
-        self.assign_layout(available_space, col_width, row_height);
-    }
-
-    /// Recursively assigns layout rectangles to children based on their split counts
-    fn assign_layout(&mut self, space: Rect, col_width: u16, row_height: u16) {
-        match self {
-            LayoutNode::Container {
-                direction,
-                children,
-                ..
-            } => {
                 let mut offset = 0u16;
-
-                for child in children.iter_mut() {
-                    // Each child gets space proportional to its split count
-                    let child_splits = child.count_splits(*direction);
-
-                    let child_rect = match direction {
+                for (child, size) in children.iter_mut().zip(sizes) {
+                    let child_space = match direction {
                         Direction::Vertical => Rect {
                             x: space.x + offset,
                             y: space.y,
-                            width: col_width * child_splits as u16,
+                            width: size,
                             height: space.height,
                         },
                         Direction::Horizontal => Rect {
                             x: space.x,
                             y: space.y + offset,
                             width: space.width,
-                            height: row_height * child_splits as u16,
+                            height: size,
                         },
                     };
-
-                    offset += match direction {
-                        Direction::Vertical => child_rect.width,
-                        Direction::Horizontal => child_rect.height,
-                    };
-
-                    child.assign_layout(child_rect, col_width, row_height);
+                    offset += size;
+                    child.calculate_layout(child_space);
                 }
-            }
-            LayoutNode::Leaf { window } => {
-                window.area = space;
             }
         }
     }
@@ -359,5 +324,92 @@ impl LayoutNode {
         }
 
         None
+    }
+}
+
+/// Splits `span` into `count` sizes weighted by `ratios` (or equally); sizes always sum to `span`.
+fn split_span(span: u16, count: usize, ratios: Option<&[f32]>) -> Vec<u16> {
+    let weights: Vec<f32> = match ratios {
+        Some(r) if r.len() == count && r.iter().all(|w| *w > 0.0) => r.to_vec(),
+        _ => vec![1.0; count],
+    };
+    let total: f32 = weights.iter().sum();
+
+    let mut sizes = Vec::with_capacity(count);
+    let mut boundary = 0u16;
+    let mut cumulative = 0.0;
+    for weight in weights {
+        cumulative += weight;
+        let next = (cumulative / total * span as f32).round() as u16;
+        sizes.push(next.saturating_sub(boundary));
+        boundary = next;
+    }
+    sizes
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::buffer::BufferId;
+    use crate::window::Window;
+
+    fn leaf(id: usize) -> LayoutNode {
+        LayoutNode::Leaf {
+            window: Window::new(WindowId(id), BufferId::new(0), Rect::default()),
+        }
+    }
+
+    fn areas(node: &LayoutNode) -> Vec<(usize, Rect)> {
+        node.iter().map(|w| (w.id.0, w.area)).collect()
+    }
+
+    #[test]
+    fn split_span_fills_exactly() {
+        assert_eq!(split_span(100, 3, None).iter().sum::<u16>(), 100);
+        assert_eq!(split_span(101, 4, None).iter().sum::<u16>(), 101);
+        assert_eq!(split_span(7, 2, None), vec![4, 3]);
+    }
+
+    #[test]
+    fn split_span_respects_ratios() {
+        assert_eq!(split_span(100, 2, Some(&[0.25, 0.75])), vec![25, 75]);
+        assert_eq!(split_span(80, 2, Some(&[3.0, 1.0])), vec![60, 20]);
+    }
+
+    #[test]
+    fn vertical_container_tiles_width() {
+        let mut root = LayoutNode::Container {
+            direction: Direction::Vertical,
+            children: vec![leaf(0), leaf(1)],
+            ratios: Some(vec![0.5, 0.5]),
+        };
+        root.calculate_layout(Rect::new(0, 0, 100, 40));
+
+        let got = areas(&root);
+        assert_eq!(got[0].1, Rect::new(0, 0, 50, 40));
+        assert_eq!(got[1].1, Rect::new(50, 0, 50, 40));
+    }
+
+    #[test]
+    fn nested_asymmetric_tree_leaves_no_gap() {
+        // One tall column on the left, a column split into two rows on the right.
+        let mut root = LayoutNode::Container {
+            direction: Direction::Vertical,
+            children: vec![
+                leaf(0),
+                LayoutNode::Container {
+                    direction: Direction::Horizontal,
+                    children: vec![leaf(1), leaf(2)],
+                    ratios: Some(vec![0.5, 0.5]),
+                },
+            ],
+            ratios: Some(vec![0.5, 0.5]),
+        };
+        root.calculate_layout(Rect::new(0, 0, 100, 40));
+
+        let got = areas(&root);
+        assert_eq!(got[0].1, Rect::new(0, 0, 50, 40), "left column full height");
+        assert_eq!(got[1].1, Rect::new(50, 0, 50, 20), "right top row");
+        assert_eq!(got[2].1, Rect::new(50, 20, 50, 20), "right bottom row");
     }
 }

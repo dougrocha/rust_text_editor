@@ -1,19 +1,25 @@
 // https://tree-sitter.github.io/tree-sitter/syntax-highlighting
 // https://www.youtube.com/watch?v=rHgXmG8U5YQ&list=PL9KpW-9Hl_het1V3_dLhG_0K99a9043ac&index=6
 
-use std::ops::Range;
+use std::{ops::Range, path::Path};
 
 use ratatui::style::Color;
 use ropey::RopeSlice;
-use tree_sitter::{InputEdit, Node, Parser, Point, Query, QueryCursor, TextProvider, Tree};
-
-const CANCELLATION_CHECK_INTERVAL: usize = 100;
+use tree_sitter::{InputEdit, Language, Node, Parser, Point, Query, QueryCursor, TextProvider, Tree};
 
 #[derive(Debug)]
 enum Error {
     Cancelled,
     InvalidLanguage,
     _Unknown,
+}
+
+/// Picks the grammar + highlight query for a file extension; `None` means "no highlighting".
+fn language_for_extension(extension: &str) -> Option<(Language, &'static str)> {
+    match extension {
+        "rs" => Some((tree_sitter_rust::language(), tree_sitter_rust::HIGHLIGHTS_QUERY)),
+        _ => None,
+    }
 }
 
 // Adapter to convert rope chunks to bytes
@@ -48,21 +54,31 @@ pub struct HighlightInfo {
 pub struct Highlight {
     parser: Parser,
     root: Option<Tree>,
-    query: Query,
+    /// `None` when the file's extension has no known grammar - highlighting is a no-op then.
+    language: Option<Language>,
+    query: Option<Query>,
 }
 
 impl Highlight {
-    // TODO: Handle files that arent rust
-    pub fn new(content: RopeSlice) -> Self {
-        let query = Query::new(
-            &tree_sitter_rust::language(),
-            tree_sitter_rust::HIGHLIGHTS_QUERY,
-        )
-        .unwrap();
+    /// `path` picks the grammar by extension; unrecognized or missing extensions get no highlighting.
+    pub fn new(content: RopeSlice, path: Option<&Path>) -> Self {
+        let grammar = path
+            .and_then(Path::extension)
+            .and_then(|ext| ext.to_str())
+            .and_then(language_for_extension);
+
+        let (language, query) = match grammar {
+            Some((language, query_src)) => {
+                let query = Query::new(&language, query_src).unwrap();
+                (Some(language), Some(query))
+            }
+            None => (None, None),
+        };
 
         let mut highlight = Self {
             parser: Parser::new(),
             root: None,
+            language,
             query,
         };
 
@@ -71,11 +87,15 @@ impl Highlight {
         highlight
     }
 
-    pub fn tree(&self) -> &Tree {
-        self.root.as_ref().unwrap()
+    pub fn tree(&self) -> Option<&Tree> {
+        self.root.as_ref()
     }
 
     pub fn update(&mut self, content: RopeSlice, edit: Option<&InputEdit>) {
+        if self.language.is_none() {
+            return;
+        }
+
         let content = content.slice(..);
 
         if let (Some(tree), Some(input_edit)) = (self.root.as_mut(), edit) {
@@ -86,14 +106,17 @@ impl Highlight {
     }
 
     fn parse(&mut self, content: RopeSlice) -> Result<(), Error> {
-        let parser = &mut self.parser;
+        let Some(language) = self.language.as_ref() else {
+            return Ok(());
+        };
 
-        parser.set_timeout_micros(1000 * 500);
-        parser
-            .set_language(&tree_sitter_rust::language())
+        self.parser.set_timeout_micros(1000 * 500);
+        self.parser
+            .set_language(language)
             .map_err(|_| Error::InvalidLanguage)?;
 
-        let tree = parser
+        let tree = self
+            .parser
             .parse_with(
                 &mut |byte, _| {
                     if byte <= content.len_bytes() {
@@ -113,10 +136,14 @@ impl Highlight {
     }
 
     pub fn colors(&self, content: RopeSlice, range: Range<usize>) -> Vec<HighlightInfo> {
+        let (Some(query), Some(tree)) = (&self.query, self.tree()) else {
+            return Vec::new();
+        };
+
         let mut cursor = QueryCursor::new();
         cursor.set_byte_range(range);
 
-        let captures = cursor.captures(&self.query, self.tree().root_node(), RopeProvider(content));
+        let captures = cursor.captures(query, tree.root_node(), RopeProvider(content));
 
         let mut colors = Vec::new();
 
@@ -125,7 +152,7 @@ impl Highlight {
 
             let range = capture.node.byte_range();
 
-            let color = match self.query.capture_names()[capture.index as usize] {
+            let color = match query.capture_names()[capture.index as usize] {
                 "keyword" => Color::Blue,
                 "string" => Color::Green,
                 "constructor" => Color::Rgb(156, 207, 216),
@@ -181,7 +208,7 @@ mod tests {
         let content = Rope::from_reader(BufReader::new(File::open(file_path).unwrap())).unwrap();
 
         let content = content.slice(..);
-        let highlighter = Highlight::new(content);
+        let highlighter = Highlight::new(content, Some(std::path::Path::new(file_path)));
 
         let vertical = 1;
         let height = 49;
@@ -236,5 +263,28 @@ mod tests {
 
             x += 1;
         }
+    }
+
+    #[test]
+    fn rust_files_get_highlighted() {
+        let content = Rope::from_str("let x = 1;\n");
+        let content = content.slice(..);
+        let rs = Highlight::new(content, Some(std::path::Path::new("main.rs")));
+        assert!(!rs.colors(content, 0..content.len_bytes()).is_empty());
+    }
+
+    #[test]
+    fn non_rust_files_get_no_highlighting() {
+        let content = Rope::from_str("This is plain prose, not rust code.\n");
+        let content = content.slice(..);
+
+        let txt = Highlight::new(content, Some(std::path::Path::new("notes.txt")));
+        assert!(txt.colors(content, 0..content.len_bytes()).is_empty());
+
+        let no_ext = Highlight::new(content, Some(std::path::Path::new("README")));
+        assert!(no_ext.colors(content, 0..content.len_bytes()).is_empty());
+
+        let no_path = Highlight::new(content, None);
+        assert!(no_path.colors(content, 0..content.len_bytes()).is_empty());
     }
 }

@@ -5,6 +5,15 @@ use crate::buffer::BufferId;
 use super::layout_node::LayoutNode;
 use super::window::{Window, WindowId};
 
+/// A spatial direction for moving window focus.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FocusDir {
+    Left,
+    Right,
+    Up,
+    Down,
+}
+
 #[derive(Default)]
 pub struct Windows {
     root: Option<LayoutNode>,
@@ -116,6 +125,27 @@ impl Windows {
         }
     }
 
+    /// Moves focus to the nearest window in `dir`; returns `true` if focus moved.
+    pub fn focus_direction(&mut self, dir: FocusDir) -> bool {
+        let Some(current) = self.get_focused().map(|w| (w.id, w.area)) else {
+            return false;
+        };
+
+        let candidates: Vec<(WindowId, Rect)> = self
+            .iter()
+            .filter(|w| w.id != current.0)
+            .map(|w| (w.id, w.area))
+            .collect();
+
+        match best_neighbor(current.1, &candidates, dir) {
+            Some(target) => {
+                self.focus(target);
+                true
+            }
+            None => false,
+        }
+    }
+
     pub fn get_by_buffer_id(&self, buffer_id: BufferId) -> Vec<&Window> {
         self.iter()
             .filter(|window| window.buffer_id == buffer_id)
@@ -140,6 +170,14 @@ impl Windows {
 
     pub fn area(&self) -> Rect {
         self.area
+    }
+
+    /// Updates the total area and re-tiles every window to fit it.
+    pub fn resize(&mut self, area: Rect) {
+        self.area = area;
+        if let Some(root) = self.root.as_mut() {
+            root.calculate_layout(area);
+        }
     }
 
     pub fn get(&self, win_id: WindowId) -> Option<&Window> {
@@ -171,5 +209,75 @@ impl Windows {
 
     pub(crate) fn root(&self) -> Option<&LayoutNode> {
         self.root.as_ref()
+    }
+}
+
+/// Picks the closest window fully on the `dir` side of `current`, preferring axis-aligned ones.
+fn best_neighbor(current: Rect, candidates: &[(WindowId, Rect)], dir: FocusDir) -> Option<WindowId> {
+    let cur_mid_x = current.x as i32 + current.width as i32 / 2;
+    let cur_mid_y = current.y as i32 + current.height as i32 / 2;
+
+    let mut best: Option<(WindowId, i32)> = None;
+    for &(id, area) in candidates {
+        let on_side = match dir {
+            FocusDir::Left => area.x + area.width <= current.x,
+            FocusDir::Right => area.x >= current.x + current.width,
+            FocusDir::Up => area.y + area.height <= current.y,
+            FocusDir::Down => area.y >= current.y + current.height,
+        };
+        if !on_side {
+            continue;
+        }
+
+        let mid_x = area.x as i32 + area.width as i32 / 2;
+        let mid_y = area.y as i32 + area.height as i32 / 2;
+        let (along, perp) = match dir {
+            FocusDir::Left | FocusDir::Right => ((mid_x - cur_mid_x).abs(), (mid_y - cur_mid_y).abs()),
+            FocusDir::Up | FocusDir::Down => ((mid_y - cur_mid_y).abs(), (mid_x - cur_mid_x).abs()),
+        };
+        let score = along + perp * 3;
+
+        if best.map_or(true, |(_, best_score)| score < best_score) {
+            best = Some((id, score));
+        }
+    }
+
+    best.map(|(id, _)| id)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn win(id: usize, area: Rect) -> (WindowId, Rect) {
+        (WindowId(id), area)
+    }
+
+    #[test]
+    fn moves_across_a_two_by_two_grid() {
+        // windows 0,1,2,3 arranged as a 2x2 grid, top-left to bottom-right
+        let top_left = Rect::new(0, 0, 50, 20);
+        let grid = [
+            win(0, top_left),
+            win(1, Rect::new(50, 0, 50, 20)),
+            win(2, Rect::new(0, 20, 50, 20)),
+            win(3, Rect::new(50, 20, 50, 20)),
+        ];
+
+        assert_eq!(best_neighbor(top_left, &grid[1..], FocusDir::Right), Some(WindowId(1)));
+        assert_eq!(best_neighbor(top_left, &grid[1..], FocusDir::Down), Some(WindowId(2)));
+        assert_eq!(best_neighbor(top_left, &grid[1..], FocusDir::Left), None);
+        assert_eq!(best_neighbor(top_left, &grid[1..], FocusDir::Up), None);
+    }
+
+    #[test]
+    fn picks_the_aligned_pane_when_several_are_on_that_side() {
+        let current = Rect::new(0, 20, 50, 20);
+        let candidates = [
+            win(1, Rect::new(50, 0, 50, 20)),  // right, misaligned up
+            win(2, Rect::new(50, 20, 50, 20)), // right, aligned
+            win(3, Rect::new(50, 40, 50, 20)), // right, misaligned down
+        ];
+        assert_eq!(best_neighbor(current, &candidates, FocusDir::Right), Some(WindowId(2)));
     }
 }

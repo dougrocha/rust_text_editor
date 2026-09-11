@@ -9,6 +9,7 @@ use crossterm::{
     event::{
         DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture,
         Event as CrosstermEvent, KeyEvent, KeyEventKind, MouseEvent,
+        KeyboardEnhancementFlags, PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags,
     },
     terminal::{EnterAlternateScreen, LeaveAlternateScreen},
 };
@@ -50,6 +51,8 @@ pub struct Terminal {
     pub tick_rate: f64,
     pub mouse: bool,
     pub paste: bool,
+    /// Whether the terminal accepted the keyboard enhancement protocol on `enter`.
+    keyboard_enhanced: bool,
 }
 
 impl Terminal {
@@ -73,6 +76,7 @@ impl Terminal {
             tick_rate,
             mouse,
             paste,
+            keyboard_enhanced: false,
         })
     }
 
@@ -120,6 +124,7 @@ impl Terminal {
                       Some(Ok(evt)) => {
                         match evt {
                           CrosstermEvent::Key(key) => {
+                            tracing::trace!(?key.code, ?key.modifiers, ?key.kind, "key event");
                             if key.kind == KeyEventKind::Press {
                               _event_tx.send(Event::Key(key)).unwrap();
                             }
@@ -178,6 +183,21 @@ impl Terminal {
     pub fn enter(&mut self) -> Result<()> {
         crossterm::terminal::enable_raw_mode()?;
         crossterm::execute!(io(), EnterAlternateScreen, cursor::Hide)?;
+
+        // Ask for full key reporting (Ctrl-combos tag their modifier) plus shifted-key alternates, so e.g. Shift-; still resolves to ':'; non-fatal if unsupported.
+        self.keyboard_enhanced = crossterm::execute!(
+            io(),
+            PushKeyboardEnhancementFlags(
+                KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES
+                    | KeyboardEnhancementFlags::REPORT_ALL_KEYS_AS_ESCAPE_CODES
+                    | KeyboardEnhancementFlags::REPORT_ALTERNATE_KEYS
+            )
+        )
+        .is_ok();
+        if !self.keyboard_enhanced {
+            tracing::info!("keyboard enhancement protocol unavailable; using legacy key encoding");
+        }
+
         if self.mouse {
             crossterm::execute!(io(), EnableMouseCapture)?;
         }
@@ -198,6 +218,10 @@ impl Terminal {
             }
             if self.mouse {
                 crossterm::execute!(io(), DisableMouseCapture)?;
+            }
+            if self.keyboard_enhanced {
+                crossterm::execute!(io(), PopKeyboardEnhancementFlags)?;
+                self.keyboard_enhanced = false;
             }
             crossterm::execute!(io(), LeaveAlternateScreen, cursor::Show)?;
             crossterm::terminal::disable_raw_mode()?;

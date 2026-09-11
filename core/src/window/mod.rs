@@ -6,4 +6,4 @@ mod windows;
 // Re-export public API
 pub use layout_node::LayoutNode;
 pub use window::{Offset, Window, WindowId};
-pub use windows::Windows;
+pub use windows::{FocusDir, Windows};

@@ -85,6 +85,7 @@ impl App {
 
                 let new_area = self.terminal.size().expect("Not able to get terminal size");
 
+                context.editor.windows.resize(new_area);
                 self.components.resize(new_area);
                 self.components.handle_events(
                     &Event::Resize(new_area.width, new_area.height),

@@ -1,7 +1,7 @@
 use std::{fs::File, io::BufReader, path::Path};
 
 use color_eyre::eyre::Result;
-use crossterm::event::{KeyCode, KeyEvent};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Style, Stylize},
@@ -20,7 +20,7 @@ use crate::{
     movements,
     prompt::CommandPrompt,
     terminal::Event,
-    window::{Offset, Windows},
+    window::{FocusDir, Offset, Windows},
 };
 
 pub struct Editor {
@@ -28,6 +28,8 @@ pub struct Editor {
     pub buffers: Buffers,
     pub windows: Windows,
     pub should_quit: bool,
+    /// Transient message shown on the status line (e.g. after `:w`).
+    pub status_message: Option<String>,
 }
 
 impl Editor {
@@ -37,11 +39,25 @@ impl Editor {
             windows: Windows::new(area),
             buffers: Buffers::new(),
             should_quit: false,
+            status_message: None,
         }
     }
 
     pub fn should_quit(&self) -> bool {
         self.should_quit
+    }
+
+    pub fn set_status_message(&mut self, message: impl Into<String>) {
+        self.status_message = Some(message.into());
+    }
+
+    pub fn clear_status_message(&mut self) {
+        self.status_message = None;
+    }
+
+    /// True if any open buffer has unsaved edits.
+    pub fn has_unsaved_changes(&self) -> bool {
+        self.buffers.iter().any(|buf| buf.is_modified())
     }
 
     pub fn open(&mut self, file_path: &Path) -> Result<BufferId> {
@@ -76,9 +92,11 @@ impl Editor {
             width(&line_to_cursor)
         };
 
+        // Cursor and offset can be briefly inconsistent (e.g. just after a resize); clamp rather than panic.
         Some(Position {
-            x: focused_window.area.x as usize + x - focused_window.offset.horizontal,
-            y: focused_window.area.y as usize + line_number - focused_window.offset.vertical,
+            x: (focused_window.area.x as usize + x).saturating_sub(focused_window.offset.horizontal),
+            y: (focused_window.area.y as usize + line_number)
+                .saturating_sub(focused_window.offset.vertical),
         })
     }
 }
@@ -96,9 +114,19 @@ impl EditorView {
             editor: context.editor,
         };
 
+        // Any keystroke dismisses a lingering status message.
+        event_context.editor.clear_status_message();
+
+        let ctrl = event.modifiers.contains(KeyModifiers::CONTROL);
+
         match event_context.editor.mode {
             Mode::Normal => match event.code {
-                KeyCode::Char('q') => event_context.editor.should_quit = true,
+                // Ctrl-h/j/k/l moves window focus; unbound in Normal mode, so Backspace works unmodified too (many terminals can't tag Ctrl-h as Ctrl).
+                KeyCode::Char('h') if ctrl => focus_window(&mut event_context, FocusDir::Left),
+                KeyCode::Backspace => focus_window(&mut event_context, FocusDir::Left),
+                KeyCode::Char('j') if ctrl => focus_window(&mut event_context, FocusDir::Down),
+                KeyCode::Char('k') if ctrl => focus_window(&mut event_context, FocusDir::Up),
+                KeyCode::Char('l') if ctrl => focus_window(&mut event_context, FocusDir::Right),
                 KeyCode::Char('l') => movements::move_right(&mut event_context),
                 KeyCode::Char('h') => movements::move_left(&mut event_context),
                 KeyCode::Char('j') => movements::move_down(&mut event_context),
@@ -138,6 +166,15 @@ impl EditorView {
         window.position_cursor_in_view(buf, 12);
 
         EventPropagation::Consume(None)
+    }
+}
+
+/// Moves focus in `dir` and keeps the newly focused window's cursor in view.
+fn focus_window(context: &mut Context, dir: FocusDir) {
+    if context.editor.windows.focus_direction(dir) {
+        let window = context.editor.windows.get_focused_mut().unwrap();
+        let buf = context.editor.buffers.get(window.buffer_id).unwrap();
+        window.position_cursor_in_view(buf, 12);
     }
 }
 
@@ -213,6 +250,12 @@ impl Component for EditorView {
             content,
             cursor,
             mode: editor.mode,
+            modified: focused_buf.is_modified(),
+            file_name: focused_buf
+                .file_path()
+                .and_then(|path| path.file_name())
+                .and_then(|name| name.to_str()),
+            status_message: editor.status_message.as_deref(),
         };
         f.render_widget(status_line, buf_layout[1]);
     }
@@ -311,6 +354,9 @@ struct StatusLine<'a> {
     content: RopeSlice<'a>,
     cursor: &'a Cursor,
     mode: Mode,
+    modified: bool,
+    file_name: Option<&'a str>,
+    status_message: Option<&'a str>,
 }
 
 impl Widget for StatusLine<'_> {
@@ -333,20 +379,21 @@ impl Widget for StatusLine<'_> {
         .fg(Color::Black)
         .bg(Color::Rgb(235, 188, 186));
 
-        let buffer_layout = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints(vec![Constraint::Percentage(100), Constraint::Length(1)])
-            .split(area);
+        let left = Span::from(match self.status_message {
+            Some(message) => format!(" {message}"),
+            None => {
+                let name = self.file_name.unwrap_or("[scratch]");
+                let flag = if self.modified { " [+]" } else { "" };
+                format!(" {name}{flag}")
+            }
+        });
 
         let mode = Span::from(self.mode.to_string());
 
-        let space = Span::from(format!(
-            "{:>w$}",
-            "",
-            w = buffer_layout[1].width as usize - line_info.width() - mode.width()
-        ));
+        let used = left.width() + mode.width() + line_info.width();
+        let space = Span::from(" ".repeat((area.width as usize).saturating_sub(used)));
 
-        let status_line = Line::from(vec![space, mode, line_info]);
+        let status_line = Line::from(vec![left, space, mode, line_info]);
 
         buf.set_line(area.x, area.y, &status_line, area.width);
     }
